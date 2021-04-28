@@ -114,6 +114,7 @@ bool kbdEnable = false;
 	uint8_t cntKBD = 0;
 	volatile uint16_t kbdCode = 0;
 	volatile uint32_t kbdCnt = 0;
+	uint8_t kbdRdy = 1;
 #endif
 
 
@@ -261,6 +262,8 @@ int main(void)
     HAL_TIM_Base_Start_IT(&htim3);
 
 
+    oled_withDMA = 1;
+
     i2c_ssd1306_init();//screen INIT
     i2c_ssd1306_pattern();//set any params for screen
     //i2c_ssd1306_invert();
@@ -291,7 +294,6 @@ int main(void)
     evt_t evt = msg_none;
     uint32_t last_sec = (uint32_t)epoch;
 
-    oled_withDMA = 1;
 
   /* USER CODE END 2 */
 
@@ -307,6 +309,7 @@ int main(void)
     			//kbdCnt++;
     			//kbdCode = kbd_get_touch();
     			sprintf(buf, "KBD: <%c>", (char)kbdCode);
+    			mkLineCenter(buf, FONT_WIDTH);
     			i2c_ssd1306_text_xy(buf, 1, 8);
 #endif
     		break;
@@ -1000,13 +1003,18 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 //-------------------------------------------------------------------------------------------
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
-	if (hi2c->Instance == I2C1) devError |= devCB;//devI2C;
+	if (hi2c->Instance == I2C1) devError |= devI2C;
 	else
-	if (hi2c->Instance == I2C2) devError |= devCB;//devKBD;
+	if (hi2c->Instance == I2C2) devError |= devKBD;
 }
 /*
 void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
+	if (hi2c->Instance == I2C1) {//from KBD
+		kbdRdy = 1;
+	} else if (hi2c->Instance == I2C2) {//from OLED
+		//
+	}
 }
 void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c)
 {

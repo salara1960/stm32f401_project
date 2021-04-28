@@ -8,29 +8,24 @@
 
 
 //******************************************************************************************
-
-
+void chkErrKBD(HAL_StatusTypeDef ret)
+{
+	if (ret != HAL_OK) devError |= devKBD; else devError &= ~devKBD;
+}
 //-------------------------------------------------------------------------------------------
 void kbdWriteRegs(uint8_t reg, uint8_t *data, size_t len)
 {
-
 	HAL_StatusTypeDef rt = HAL_I2C_Mem_Write(portKBD, kbdAddr << 1, reg, sizeof(reg), data, len, min_wait_ms);
 
-	if (rt != HAL_OK) devError |= devKBD; else devError &= ~devKBD;
-	//HAL_Delay(50);
+	chkErrKBD(rt);
 }
 //-------------------------------------------------------------------------------------------
 void kbdReadRegs(uint8_t reg, uint8_t *data, size_t len)
 {
-/*
-	HAL_StatusTypeDef rt = HAL_I2C_Mem_Read(portKBD, kbdAddr << 1, reg, 1, data, len, max_wait_ms);
-	if (rt != HAL_OK) devError |= devKBD; else devError &= ~devKBD;
-	//HAL_Delay(50);
-*/
 	HAL_StatusTypeDef rt = HAL_I2C_Master_Transmit(portKBD, kbdAddr << 1, &reg, 1, min_wait_ms);
 	rt |= HAL_I2C_Master_Receive(portKBD, kbdAddr << 1, data, len, max_wait_ms);
 
-	if (rt != HAL_OK) devError |= devKBD; else devError &= ~devKBD;
+	chkErrKBD(rt);
 }
 //-------------------------------------------------------------------------------------------
 bool KBD_getAddr(int16_t *addr)
@@ -155,68 +150,6 @@ uint16_t kbd_get_touch()// get touch status
 
 	return key;
 }
-
-/*
-char getPhoneNumber()
-{
-  int touchNumber;
-	int j;
-  uint16_t touchstatus;
-	char key=-1;
-  //Serial.println("Please Enter a phone number...");
-
-    //while(key_pressed);//用while读取会阻塞程序运行
-	if(key_pressed==0)//非阻塞方式
-	{
-	key_pressed=1;
-    touchNumber = 0;
-
-    touchstatus = mpr121Read(0x01) << 8;
-    touchstatus |= mpr121Read(0x00);
-
-    for (j=0; j<12; j++)  // Check how many electrodes were pressed
-    {
-      if ((touchstatus & (1<<j)))
-        touchNumber++;
-    }
-
-    if (touchNumber == 1)
-    {
-      if (touchstatus & (1<<STAR))
-        key = '*';
-      else if (touchstatus & (1<<SEVEN))
-        key = '7';
-      else if (touchstatus & (1<<FOUR))
-        key= '4';
-      else if (touchstatus & (1<<ONE))
-        key = '1';
-      else if (touchstatus & (1<<ZERO))
-        key= '0';
-      else if (touchstatus & (1<<EIGHT))
-        key = '8';
-      else if (touchstatus & (1<<FIVE))
-        key = '5';
-      else if (touchstatus & (1<<TWO))
-        key = '2';
-      else if (touchstatus & (1<<POUND))
-        key = '#';
-      else if (touchstatus & (1<<NINE))
-        key = '9';
-      else if (touchstatus & (1<<SIX))
-        key = '6';
-      else if (touchstatus & (1<<THREE))
-        key = '3';
-
-      //Serial.print(key[i]);
-
-    }
-    else if (touchNumber == 0);
-    else;
-      //Serial.println("Only touch ONE button!");
-	}
-		return key;
-}
-*/
 //-----------------------------------------------------------------------------------------
 
 //******************************************************************************************

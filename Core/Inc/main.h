@@ -63,10 +63,9 @@ enum {
 	devUART = 2,
 	devI2C = 4,
 	devKBD = 8,
-	devCB = 0x10,
-	devRTC = 0x20,
-	devMem = 0x40,
-	devFifo = 0x80
+	devRTC = 0x10,
+	devMem = 0x20,
+	devFifo = 0x40
 };
 
 typedef enum {
