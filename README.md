@@ -5,8 +5,8 @@ Hardware components :
 
 ```
 * STM32F401 (clone Black Pill board)
-* ssd1306 OLED display 128x64 (i2c)
-* W25Q64 chip - flash memory 8MB (spi)
+* ssd1306 OLED display 128x64 (i2c with DMA)
+* W25Q64 chip - flash memory 8MB (spi with DMA)
 * MPR121 - Capacitive Touch Keypad (i2c)
 ```
 

@@ -62,15 +62,17 @@ enum {
 	devSPI = 1,
 	devUART = 2,
 	devI2C = 4,
-	devRTC = 8,
-	devMem = 0x10,
-	devFifo = 0x20
+	devKBD = 8,
+	devCB = 0x10,
+	devRTC = 0x20,
+	devMem = 0x40,
+	devFifo = 0x80
 };
 
 typedef enum {
 	msg_empty = 0,
 	//msg_rst,
-	//msg_500ms,
+	msg_250ms,
 	msg_sec,
 	msg_kbd,
 	msg_none

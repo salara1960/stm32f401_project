@@ -48,8 +48,6 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 I2C_HandleTypeDef hi2c2;
-DMA_HandleTypeDef hdma_i2c1_tx;
-DMA_HandleTypeDef hdma_i2c1_rx;
 DMA_HandleTypeDef hdma_i2c2_tx;
 
 RTC_HandleTypeDef hrtc;
@@ -68,7 +66,9 @@ DMA_HandleTypeDef hdma_usart1_rx;
 
 //const char *version = "0.1 (25.04.2021)";
 //const char *version = "0.2 (26.04.2021)";
-const char *version = "0.3 (27.04.2021)";
+//const char *version = "0.3 (27.04.2021)";
+//const char *version = "0.4 (28.04.2021)";
+const char *version = "0.5 (28.04.2021)";//support KBD done !
 
 
 static evt_t evt_fifo[MAX_FIFO_SIZE] = {msg_empty};
@@ -78,7 +78,7 @@ uint8_t wr_evt_err = 0;
 uint8_t cnt_evt = 0;
 uint8_t max_evt = 0;
 
-volatile time_t epoch = 1619513155;//1619473366;//1619375396;//1619335999;
+volatile time_t epoch = 1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -101,9 +101,9 @@ SPI_HandleTypeDef *portFLASH = &hspi1;
 uint32_t spi_cnt = 0;
 uint8_t spiRdy = 1;
 
-GPIO_PinState kbdState = GPIO_PIN_SET;
-uint32_t tikStart = 0;
-bool kbdKeyPressed = false;
+//GPIO_PinState kbdState = GPIO_PIN_SET;
+//uint32_t tikStart = 0;
+//bool kbdKeyPressed = false;
 
 bool kbdPresent = false;
 bool kbdInitOk = false;
@@ -111,8 +111,8 @@ int16_t kbdAddr = 0;
 bool kbdEnable = false;
 #ifdef SET_KBD
 	I2C_HandleTypeDef *portKBD = &hi2c1;
-	uint32_t kbd1tik = 0;
-	uint16_t kbdCode = 0;
+	uint8_t cntKBD = 0;
+	volatile uint16_t kbdCode = 0;
 	volatile uint32_t kbdCnt = 0;
 #endif
 
@@ -272,13 +272,11 @@ int main(void)
     kbdPresent = KBD_getAddr(&kbdAddr);
     if (kbdPresent) {
     	kbdInitOk = kbdInit();
-    	HAL_Delay(10);
-    	//
     	if (kbdInitOk) kbdEnable = true;
     }
 #endif
 
-    Report(NULL, true, "Version '%s' kbdPresent=%d kbdInit=%d kbdAddr=0x%02X\n", version, kbdPresent, kbdInitOk, kbdAddr);
+    Report(NULL, true, "Version '%s' KBD: Present=%d Init=%d Addr=0x%02X, ERROR: 0x%X\n", version, kbdPresent, kbdInitOk, kbdAddr, devError);
 
 #ifdef SET_W25FLASH
     //W25_UNSELECT();
@@ -291,7 +289,9 @@ int main(void)
 #endif
 
     evt_t evt = msg_none;
-    time_t last_sec = epoch;
+    uint32_t last_sec = (uint32_t)epoch;
+
+    oled_withDMA = 1;
 
   /* USER CODE END 2 */
 
@@ -299,34 +299,39 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 
     while (!restart_flag) {
-    /* USER CODE END WHILE */
 
     	evt = getMsg();
     	switch ((int)evt) {
-			case msg_kbd:
-#ifdef SET_KBD
-				kbdCnt++;
-				if (kbdEnable) {
-					//HAL_GPIO_TogglePin(ENC_LED_GPIO_Port, ENC_LED_Pin);
-					kbdCode = kbd_get_touch();
-				}
+    		case msg_kbd:
+#if defined(SET_KBD) && defined(SET_OLED_I2C)
+    			//kbdCnt++;
+    			//kbdCode = kbd_get_touch();
+    			sprintf(buf, "KBD: <%c>", (char)kbdCode);
+    			i2c_ssd1306_text_xy(buf, 1, 8);
 #endif
-			break;
-			case msg_sec:
-			{
-				uint32_t cur_sec = get_tmr(0);
-				sec_to_str_time(cur_sec, buf);
-#ifdef SET_KBD
-				sprintf(buf+strlen(buf), "\nKBD:%lu %04X", kbdCnt, kbdCode);
-#endif
+    		break;
+    		case msg_sec:
+    		{
+    			uint32_t cur_sec = get_tmr(0);
+    			sec_to_str_time(cur_sec, buf);
+//#ifdef SET_KBD
+//    			sprintf(buf+strlen(buf), "\nKBD:%d %lu %04X", kbdState, kbdCnt, kbdCode);
+//#endif
+    			sprintf(buf+strlen(buf), "\nFIFO:%u %u\nERROR: 0x%02X", cnt_evt, max_evt, devError);
 #ifdef SET_OLED_I2C
-				i2c_ssd1306_text_xy(buf, 2, 1);
+    			i2c_ssd1306_text_xy(buf, 2, 1);
 #endif
-				//if (cur_sec == (uint32_t)last_sec) set_Date((time_t)(cur_sec));
-				//							  else last_sec = (uint32_t)cur_sec;
-			}
+    			if (cur_sec >= (uint32_t)epoch) {
+    				if (cur_sec == last_sec)
+    					set_Date((time_t)(cur_sec));
+    				else
+    					last_sec = cur_sec;
+    			}
+    		}
     		break;
     	}
+
+    /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
     }
@@ -647,26 +652,20 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
-  /* DMA1_Stream0_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
-  /* DMA1_Stream6_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
   /* DMA1_Stream7_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream7_IRQn, 4, 0);
+  HAL_NVIC_SetPriority(DMA1_Stream7_IRQn, 2, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream7_IRQn);
   /* DMA2_Stream0_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 4, 0);
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
   /* DMA2_Stream2_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 4, 0);
+  HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
   /* DMA2_Stream3_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream3_IRQn, 4, 0);
+  HAL_NVIC_SetPriority(DMA2_Stream3_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream3_IRQn);
   /* DMA2_Stream7_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream7_IRQn, 4, 0);
+  HAL_NVIC_SetPriority(DMA2_Stream7_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream7_IRQn);
 
 }
@@ -713,7 +712,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI1_IRQn, 5, 0);
+  HAL_NVIC_SetPriority(EXTI1_IRQn, 4, 0);
   HAL_NVIC_EnableIRQ(EXTI1_IRQn);
 
 }
@@ -985,10 +984,13 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 #ifdef SET_KBD
 	if (GPIO_Pin == KBD_INT_Pin) {
 		if (kbdEnable) {
-			//HAL_GPIO_TogglePin(ENC_LED_GPIO_Port, ENC_LED_Pin);
-			//if ((HAL_GetTick() - kbd1tik) > 50) {
-				putMsg(msg_kbd);
-			//	kbd1tik = HAL_GetTick();
+			//kbdState = HAL_GPIO_ReadPin(KBD_INT_GPIO_Port, KBD_INT_Pin);
+			//if (kbdState == GPIO_PIN_RESET)
+				kbdCode = kbd_get_touch();
+				if (kbdCode >= 0x23) {
+					kbdCnt++;
+					putMsg(msg_kbd);
+				}
 			//}
 		}
 	}
@@ -998,8 +1000,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 //-------------------------------------------------------------------------------------------
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
-	devError |= devI2C;
+	if (hi2c->Instance == I2C1) devError |= devCB;//devI2C;
+	else
+	if (hi2c->Instance == I2C2) devError |= devCB;//devKBD;
 }
+/*
 void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
 }
@@ -1012,6 +1017,7 @@ void HAL_I2C_MemTxCpltCallback(I2C_HandleTypeDef *hi2c)
 void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
 }
+*/
 //-------------------------------------------------------------------------------------------
 
 

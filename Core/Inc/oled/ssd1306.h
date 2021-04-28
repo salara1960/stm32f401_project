@@ -70,7 +70,9 @@
 //------------------------------------------------------------------------
 
 #ifdef SET_OLED_I2C
-	#define OLED_I2C_ADDRESS                0x3C << 1
+	#define OLED_I2C_ADDRESS 0x3C << 1
+
+	uint8_t oled_withDMA;
 
 	void i2c_ssd1306_on(bool flag);
 	void i2c_ssd1306_init();

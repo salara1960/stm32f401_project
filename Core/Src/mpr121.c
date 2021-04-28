@@ -7,60 +7,40 @@
 #include "mpr121.h"
 
 
-//------------------------------------------------------------------------
-
 //******************************************************************************************
-/*
-void kbdReadBuf(uint8_t from, uint8_t *buf, size_t len)
-{
-	HAL_I2C_Master_Transmit(portKBD, kbdAddr << 1, &from, 1, min_wait_ms);
 
-	HAL_I2C_Master_Receive(portKBD, kbdAddr << 1, buf, len, max_wait_ms);
-}
-*/
+
 //-------------------------------------------------------------------------------------------
 void kbdWriteRegs(uint8_t reg, uint8_t *data, size_t len)
 {
-	if (HAL_I2C_Mem_Write(portKBD, kbdAddr << 1, reg, sizeof(reg), data, len, min_wait_ms) != HAL_OK) {
-		devError |= devI2C;
-		//cnt_err++;
-	} else {
-		devError &= ~devI2C;
-	}
-}
-//-------------------------------------------------------------------------------------------
-/*
-uint8_t kbdReadReg(uint8_t reg)
-{
-	uint8_t ret = 0;
 
-	if (HAL_I2C_Mem_Read(portKBD, kbdAddr << 1, reg, 1, &ret, 1, min_wait_ms) != HAL_OK) {
-		devError |= devI2C;
-		//cnt_err++;
-	} else {
-		devError &= ~devI2C;
-	}
+	HAL_StatusTypeDef rt = HAL_I2C_Mem_Write(portKBD, kbdAddr << 1, reg, sizeof(reg), data, len, min_wait_ms);
 
-	return ret;
+	if (rt != HAL_OK) devError |= devKBD; else devError &= ~devKBD;
+	//HAL_Delay(50);
 }
-*/
 //-------------------------------------------------------------------------------------------
 void kbdReadRegs(uint8_t reg, uint8_t *data, size_t len)
 {
-	if (HAL_I2C_Mem_Read(portKBD, kbdAddr << 1, reg, 1, data, len, max_wait_ms) != HAL_OK) {
-		devError |= devI2C;
-		//cnt_err++;
-	} else {
-		devError &= ~devI2C;
-	}
+/*
+	HAL_StatusTypeDef rt = HAL_I2C_Mem_Read(portKBD, kbdAddr << 1, reg, 1, data, len, max_wait_ms);
+	if (rt != HAL_OK) devError |= devKBD; else devError &= ~devKBD;
+	//HAL_Delay(50);
+*/
+	HAL_StatusTypeDef rt = HAL_I2C_Master_Transmit(portKBD, kbdAddr << 1, &reg, 1, min_wait_ms);
+	rt |= HAL_I2C_Master_Receive(portKBD, kbdAddr << 1, data, len, max_wait_ms);
+
+	if (rt != HAL_OK) devError |= devKBD; else devError &= ~devKBD;
 }
 //-------------------------------------------------------------------------------------------
 bool KBD_getAddr(int16_t *addr)
 {
 	int16_t i = 0, adr = KBD_ADDR1;
+
 	uint8_t byte = 0x63;
 	for (i = 0; i < 4; i++) {
 		adr += i;
+		HAL_Delay(50);
 		if (HAL_I2C_Mem_Write(portKBD, adr << 1, SRST, 1, &byte, 1, max_wait_ms) == HAL_OK) {
 			*addr = adr;
 			return true;
@@ -71,165 +51,94 @@ bool KBD_getAddr(int16_t *addr)
 //-------------------------------------------------------------------------------------------
 bool kbdInit()
 {
-	bool success = true;
-	uint8_t ec;
-  	uint8_t reg_value = 0;
-  	uint8_t byte;
-/*
-void mpr121QuickConfig(void)
-{
+uint8_t byte = 0;
 
-	 mpr121_irqInit();//interrupt set
-  // Section A
-  // This group controls filtering when data is > baseline.
-  mpr121Write(MHD_R, 0x01);//0x2B
-  mpr121Write(NHD_R, 0x01);//
-  mpr121Write(NCL_R, 0x00);//
-  mpr121Write(FDL_R, 0x00);//
+	byte = 0x63;
+	kbdWriteRegs(SRST, &byte, 1);
+	HAL_Delay(1);
 
-  // Section B
-  // This group controls filtering when data is < baseline.
-  mpr121Write(MHD_F, 0x01);
-  mpr121Write(NHD_F, 0x01);
-  mpr121Write(NCL_F, 0xFF);
-  mpr121Write(FDL_F, 0x02);//0x32
 
-  // Section C
-  // This group sets touch and release thresholds for each electrode
-  mpr121Write(ELE0_T, TOU_THRESH);
-  mpr121Write(ELE0_R, REL_THRESH);
-  mpr121Write(ELE1_T, TOU_THRESH);
-  mpr121Write(ELE1_R, REL_THRESH);
-  mpr121Write(ELE2_T, TOU_THRESH);
-  mpr121Write(ELE2_R, REL_THRESH);
-  mpr121Write(ELE3_T, TOU_THRESH);
-  mpr121Write(ELE3_R, REL_THRESH);
-  mpr121Write(ELE4_T, TOU_THRESH);
-  mpr121Write(ELE4_R, REL_THRESH);
-  mpr121Write(ELE5_T, TOU_THRESH);
-  mpr121Write(ELE5_R, REL_THRESH);
-  mpr121Write(ELE6_T, TOU_THRESH);
-  mpr121Write(ELE6_R, REL_THRESH);
-  mpr121Write(ELE7_T, TOU_THRESH);
-  mpr121Write(ELE7_R, REL_THRESH);
-  mpr121Write(ELE8_T, TOU_THRESH);
-  mpr121Write(ELE8_R, REL_THRESH);
-  mpr121Write(ELE9_T, TOU_THRESH);
-  mpr121Write(ELE9_R, REL_THRESH);
-  mpr121Write(ELE10_T, TOU_THRESH);
-  mpr121Write(ELE10_R, REL_THRESH);
-  mpr121Write(ELE11_T, TOU_THRESH);
-  mpr121Write(ELE11_R, REL_THRESH);
-
-  // Section D
-  // Set the Filter Configuration
-  // Set ESI2
-  mpr121Write(FIL_CFG, 0x04);//0x5D
-
-  // Section E
-  // Electrode Configuration
-  // Enable 6 Electrodes and set to run mode
-  // Set ELE_CFG to 0x00 to return to standby mode
-  mpr121Write(ELE_CFG, 0x0C);//0x5E	// Enables all 12 Electrodes
-  //mpr121Write(ELE_CFG, 0x06);//0x5E		// Enable first 6 electrodes
-
-  // Section F
-  // Enable Auto Config and auto Reconfig
-  ////mpr121Write(ATO_CFG0, 0x0B);
-  ////mpr121Write(ATO_CFGU, 0xC9);	// USL = (Vdd-0.7)/vdd*256 = 0xC9 @3.3V   mpr121Write(ATO_CFGL, 0x82);	// LSL = 0.65*USL = 0x82 @3.3V
-  ////mpr121Write(ATO_CFGT, 0xB5);	// Target = 0.9*USL = 0xB5 @3.3V
-
-}
-*/
-
-	// soft reset
-	//write_register(SRST, 0x63);
-	//byte = 0x63;
-	//kbdWriteRegs(SRST, &byte, 1);
-	//HAL_Delay(1);
-/*
-	// read AFE Configuration 2
-	//read_register(AFE2, &reg_value);
-	kbdReadRegs(AFE2, &reg_value, 1);
-	// check default value
-	if (reg_value != 0x24) {
-		//reg_value = 0x24;
-		//kbdWriteRegs(AFE2, &reg_value, 1);
+	// read Touch Status register
+	kbdReadRegs(TS2, &byte, 1);
+	if (byte & 0x80) {//clear OVCF
+		byte = 0x80;
+		kbdWriteRegs(TS2, &byte, 1);
+		//
+		kbdReadRegs(TS2, &byte, 1);
+	}
+	if (byte & 0x80) {
+		Report(__func__, true, "ERROR MPR121: TS2=0x%02X\n", byte);
 		return false;
 	}
-*/
-	// read Touch Status register
-	//read_register(TS2, &reg_value);
-	kbdReadRegs(TS2, &reg_value, 1);
-	if (reg_value & 0x80) {//clear OVCF
-		reg_value = 0x80;
-		kbdWriteRegs(TS2, &reg_value, 1);
 
-		kbdReadRegs(TS2, &reg_value, 1);
-		if (reg_value & 0x80) {
-			return false;
-		}
-	}
+	// Put the MPR into setup mode
+	byte = 0;
+	kbdWriteRegs(ECR, &byte, 1);// turn off all electrodes to stop
 
-	// if no previous error
-	//if (success) {
-		byte = 0;
-		kbdWriteRegs(ECR, &byte, 1);// turn off all electrodes to stop
+	uint8_t data[] = { 1, 1, 0, 0, 1, 1, 0xFF, 2 };
+	kbdWriteRegs(MHDR, data, sizeof(data));//0x2B ...
 
-		uint8_t data[] = {
-			1, 1, 0x10, 0x20, 1, 1, 0x10, 0x20,
-			1, 0x10, 0xFF, 0x0F, 0x0F, 0, 0, 1,
-			1, 0xFF, 0xFF, 0, 0, 0
-		};
-		kbdWriteRegs(MHDR, data, sizeof(data));//0x2B ... 0x40
+/**/
+	data[0] = 0x11;
+	data[1] = 0xD0;//0x5C - 16uA
+	data[2] = 4;//0x14;//0x5D - Period set to 16 ms (Default)
+	kbdWriteRegs(DTR, data, 3);//0x5B ... 0x5D
 
-		data[0] = 0x11;
-		data[1] = 0xD0;//0x5C - 16uA
-		data[2] = 0x14;//0x5D - Period set to 16 ms (Default)
-		kbdWriteRegs(DTR, data, 3);//0x5B ... 0x5D
+	memset(data, 0, 5);
+	kbdWriteRegs(ACCR0, data, 5);//0x7B ... 0x7F
 
-		memset(data, 0, 5);
-		kbdWriteRegs(ACCR0, data, 5);//0x7B ... 0x7F
+	//byte = 0xCC;
+	//kbdWriteRegs(ECR, &byte, 1);
+/**/
 
-		byte = 0xCC;
-		kbdWriteRegs(ECR, &byte, 1);
+	// apply next setting for all electrodes
+	uint8_t dat[] = {
+			TOU_THRESH, REL_THRESH, TOU_THRESH, REL_THRESH,
+			TOU_THRESH, REL_THRESH, TOU_THRESH, REL_THRESH,
+			TOU_THRESH, REL_THRESH, TOU_THRESH, REL_THRESH,
+			TOU_THRESH, REL_THRESH, TOU_THRESH, REL_THRESH,
+			TOU_THRESH, REL_THRESH, TOU_THRESH, REL_THRESH,
+			TOU_THRESH, REL_THRESH, TOU_THRESH, REL_THRESH
+	};
+	kbdWriteRegs(E0TTH, dat, sizeof(dat));
 
-		// apply next setting for all electrodes
-		data[0] = 40;//5..0x30
-		data[1] = 20;
-		byte = E0TTH;
-		for (ec = 0; ec < NUM_OF_ELECTRODES; ec++) {
-			kbdWriteRegs(byte, data, 2);
-			byte += 2;
-		}
+	// Proximity Settings
+	memset(dat + 2, 0, 9);
+	dat[0] = 0xff;//,   //MHD_Prox_R
+	dat[1] = 0xff;//,   //NHD_Prox_R
+	dat[4] = 1;//,   //MHD_Prox_F
+	dat[5] = 1;//,   //NHD_Prox_F
+	dat[6] = 0xff;//,   //NCL_Prox_F
+	dat[7] = 0xff;//,   //FDL_Prox_F
+	kbdWriteRegs(MHDPROXR, dat, 11);
 
-		byte = 0x10;
-		kbdWriteRegs(ECR, &byte, 1);// enable electrodes and set the current to 16uA
-	//}
+	//line 13
+	dat[0] = TOU_THRESH;// Touch Threshold
+	dat[1] = REL_THRESH;// Release Threshold
+	kbdWriteRegs(E12TTH, dat, 2);
 
-	return success;
+	dat[0] = 4;
+	dat[1] = 0x0c;
+	kbdWriteRegs(AFE2, dat, 2);
+
+	return true;
 }
 //-------------------------------------------------------------------------------------------
 uint16_t kbd_get_touch()// get touch status
 {
 	uint8_t data[2] = {0};
 	kbdReadRegs(TS1, data, 2);
-	/*if (data[1] & 0x80) {
-		uint8_t byte = 0x80;
-		kbdWriteRegs(TS2, &byte, 1);
-	}*/
-	uint16_t ret = data[1];
-	ret <<= 8;
-	ret |= data[0];
+	uint16_t ret = data[0];
+	ret |= ((data[1] & 0x1f) << 8);
 
-	return ret;
+	//return ret;
+	if (!ret) return ret;
 
-/*
-	//int tn = 0;
-	//for (int j = 0; j < NUM_OF_ELECTRODES - 1; j++) if ((ret & (1 << j))) tn++;
+	int tn = 0;
+	for (int j = 0; j < NUM_OF_ELECTRODES - 1; j++) if ((ret & (1 << j))) tn++;
 
 	uint16_t key = 0;
-	//if (tn == 1) {
+	if (tn == 1) {
 		     if (ret & (1 << STAR))  key = 0x2a;//'*';
 		else if (ret & (1 << SEVEN)) key = 0x37;//'7';
 		else if (ret & (1 << FOUR))  key = 0x34;//'4';
@@ -242,10 +151,9 @@ uint16_t kbd_get_touch()// get touch status
 		else if (ret & (1 << NINE))  key = 0x39;//'9';
 		else if (ret & (1 << SIX))   key = 0x36;//'6';
 		else if (ret & (1 << THREE)) key = 0x33;//'3';
-	//}
+	}
 
 	return key;
-*/
 }
 
 /*
