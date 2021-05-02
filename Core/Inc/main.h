@@ -52,6 +52,10 @@ extern "C" {
 #ifdef SET_KBD
 	#include "mpr121.h"
 #endif
+#ifdef SET_DFPLAYER
+	#include "dfplayer.h"
+#endif
+
 
 /* USER CODE END Includes */
 
@@ -65,7 +69,8 @@ enum {
 	devKBD = 8,
 	devRTC = 0x10,
 	devMem = 0x20,
-	devFifo = 0x40
+	devDFP = 0x40,
+	devFifo = 0x80
 };
 
 typedef enum {
@@ -74,6 +79,18 @@ typedef enum {
 	msg_250ms,
 	msg_sec,
 	msg_kbd,
+	msg_play,
+	msg_rplay,
+	msg_stop,
+	msg_back,
+	msg_fwd,
+	msg_volUp,
+	msg_volDown,
+	msg_volGet,
+	msg_track,
+	msg_eqSet,
+	msg_eqGet,
+	msg_dfpRX,
 	msg_none
 } evt_t;
 
@@ -162,6 +179,11 @@ uint8_t Report(const char *tag, bool addTime, const char *fmt, ...);
 #endif
 #ifdef SET_W25FLASH
 	SPI_HandleTypeDef *portFLASH;
+#endif
+
+#ifdef SET_DFPLAYER
+	UART_HandleTypeDef *portDFP;
+	uint8_t dfpCmd;
 #endif
 
 uint8_t devError;

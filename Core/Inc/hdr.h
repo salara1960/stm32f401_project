@@ -13,5 +13,8 @@
 
 #define SET_W25FLASH
 
+#define SET_DFPLAYER
+
+
 
 

@@ -1,3 +1,4 @@
+"Core/Src/DFPlayer/dfplayer.o"
 "Core/Src/main.o"
 "Core/Src/mpr121.o"
 "Core/Src/stm32f4xx_hal_msp.o"

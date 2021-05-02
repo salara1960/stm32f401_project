@@ -59,8 +59,10 @@ DMA_HandleTypeDef hdma_spi1_rx;
 TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart6;
 DMA_HandleTypeDef hdma_usart1_tx;
 DMA_HandleTypeDef hdma_usart1_rx;
+DMA_HandleTypeDef hdma_usart6_tx;
 
 /* USER CODE BEGIN PV */
 
@@ -68,7 +70,10 @@ DMA_HandleTypeDef hdma_usart1_rx;
 //const char *version = "0.2 (26.04.2021)";
 //const char *version = "0.3 (27.04.2021)";
 //const char *version = "0.4 (28.04.2021)";
-const char *version = "0.5 (28.04.2021)";//support KBD done !
+//const char *version = "0.5 (28.04.2021)";//support KBD done !
+//const char *version = "0.6 (01.05.2021)";// add DFPlayer and connect to ARM via USART6(9600 8N1)
+//const char *version = "0.7 (02.05.2021)";// add library for DFPlayer
+const char *version = "0.8 (03.05.2021)";// major changes for DFPlayer support (add rx via interrupt)
 
 
 static evt_t evt_fifo[MAX_FIFO_SIZE] = {msg_empty};
@@ -78,7 +83,7 @@ uint8_t wr_evt_err = 0;
 uint8_t cnt_evt = 0;
 uint8_t max_evt = 0;
 
-volatile time_t epoch = 1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
+volatile time_t epoch = 1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -93,6 +98,7 @@ volatile uint8_t rx_uk;
 volatile uint8_t uRxByte = 0;
 uint8_t uartRdy = 1;
 uint8_t devError = 0;
+char stx[128] = {0};
 
 I2C_HandleTypeDef *portOLED = &hi2c2;
 char buf[128] = {0};
@@ -100,10 +106,6 @@ char buf[128] = {0};
 SPI_HandleTypeDef *portFLASH = &hspi1;
 uint32_t spi_cnt = 0;
 uint8_t spiRdy = 1;
-
-//GPIO_PinState kbdState = GPIO_PIN_SET;
-//uint32_t tikStart = 0;
-//bool kbdKeyPressed = false;
 
 bool kbdPresent = false;
 bool kbdInitOk = false;
@@ -117,6 +119,22 @@ bool kbdEnable = false;
 	uint8_t kbdRdy = 1;
 #endif
 
+#ifdef SET_DFPLAYER
+	UART_HandleTypeDef *portDFP = &huart6;
+	int eqClass = EQ_Normal;
+	int dfp_volume = 30;
+	uint8_t dfpCmd = 0;
+	//
+	static char dfp_RxBuf[MAX_UART_BUF];
+	volatile uint8_t dfp_rx_uk;
+	volatile uint8_t dfp_uRxByte = 0;
+	uint8_t dfpRdy = 1;
+	//
+	uint8_t dfp_ACK[64] = {0};
+	uint8_t dfp_ACK_len = 0;
+	bool dfp_Begin = false;
+	bool dfp_End = false;
+#endif
 
 /* USER CODE END PV */
 
@@ -130,6 +148,7 @@ static void MX_SPI1_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_RTC_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_USART6_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 uint32_t get_tmr10(uint32_t ms);
@@ -157,6 +176,7 @@ void putMsg(evt_t evt)
 	HAL_NVIC_DisableIRQ(EXTI1_IRQn);
 	HAL_NVIC_DisableIRQ(TIM3_IRQn);
 	HAL_NVIC_DisableIRQ(USART1_IRQn);
+	HAL_NVIC_DisableIRQ(USART6_IRQn);
 //	HAL_NVIC_DisableIRQ(SPI1_IRQn);
 
 	if (cnt_evt >= MAX_FIFO_SIZE) {
@@ -177,6 +197,7 @@ void putMsg(evt_t evt)
 		       else devError &= ~devFifo;
 
 //	HAL_NVIC_EnableIRQ(SPI1_IRQn);
+	HAL_NVIC_EnableIRQ(USART6_IRQn);
 	HAL_NVIC_EnableIRQ(USART1_IRQn);
 	HAL_NVIC_EnableIRQ(TIM3_IRQn);
 	HAL_NVIC_EnableIRQ(EXTI1_IRQn);
@@ -190,6 +211,7 @@ evt_t ret = msg_empty;
 	HAL_NVIC_DisableIRQ(EXTI1_IRQn);
 	HAL_NVIC_DisableIRQ(TIM3_IRQn);
 	HAL_NVIC_DisableIRQ(USART1_IRQn);
+	HAL_NVIC_DisableIRQ(USART6_IRQn);
 //	HAL_NVIC_DisableIRQ(SPI1_IRQn);
 
 	if (cnt_evt) {
@@ -203,6 +225,7 @@ evt_t ret = msg_empty;
 	}
 
 //	HAL_NVIC_EnableIRQ(SPI1_IRQn);
+	HAL_NVIC_EnableIRQ(USART6_IRQn);
 	HAL_NVIC_EnableIRQ(USART1_IRQn);
 	HAL_NVIC_EnableIRQ(TIM3_IRQn);
 	HAL_NVIC_EnableIRQ(EXTI1_IRQn);
@@ -248,6 +271,7 @@ int main(void)
   MX_I2C2_Init();
   MX_RTC_Init();
   MX_TIM3_Init();
+  MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
 
   	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
@@ -257,6 +281,7 @@ int main(void)
 
     //"start" rx_interrupt
     HAL_UART_Receive_IT(&huart1, (uint8_t *)&uRxByte, 1);
+    HAL_UART_Receive_IT(&huart6, (uint8_t *)&dfp_uRxByte, 1);
 
     // start timer3 in interrupt mode
     HAL_TIM_Base_Start_IT(&htim3);
@@ -291,8 +316,16 @@ int main(void)
     }
 #endif
 
+#ifdef SET_DFPLAYER
+    DFP_reset();
+    HAL_Delay(100);
+    DFP_set_eq(eqClass);
+#endif
+
     evt_t evt = msg_none;
     uint32_t last_sec = (uint32_t)epoch;
+
+
 
 
   /* USER CODE END 2 */
@@ -312,14 +345,141 @@ int main(void)
     			mkLineCenter(buf, FONT_WIDTH);
     			i2c_ssd1306_text_xy(buf, 1, 8);
 #endif
+#ifdef SET_DFPLAYER
+    			evt_t new_evt = msg_none;
+    			switch (kbdCode) {
+    				case '*':
+    					new_evt = msg_play;
+    				break;
+    				case '0':
+    					new_evt = msg_rplay;
+    				break;
+    				case '#':
+    					new_evt = msg_stop;
+    				break;
+    				case '9':
+    					new_evt = msg_back;
+    				break;
+    				case '8':
+    					new_evt = msg_eqSet;
+    				break;
+    				case '7':
+    					new_evt = msg_fwd;
+    				break;
+    				case '6':
+    					new_evt = msg_volDown;
+    				break;
+    				case '5':
+    					new_evt = msg_volGet;
+    				break;
+    				case '4':
+    					new_evt = msg_volUp;
+    				break;
+    				case '2':
+    					new_evt = msg_eqGet;
+    				break;
+    			}
+    			if (new_evt != msg_none) putMsg(new_evt);
+#endif
     		break;
+#ifdef SET_DFPLAYER
+    		case msg_play:
+    			DFP_play();
+    			//
+    			putMsg(msg_track);
+    		break;
+    		case msg_rplay:
+    			DFP_play_root(1, true);
+    			//
+    			putMsg(msg_track);
+    		break;
+    		case msg_stop:
+    			DFP_stop();
+    			//
+    			strcpy(buf, " Stop ");
+    			mkLineCenter(buf, FONT_WIDTH);
+    			i2c_ssd1306_text_xy(buf, 1, 7);
+    		break;
+    		case msg_fwd:
+    			DFP_play_next();
+    			//
+    			putMsg(msg_track);
+    		break;
+    		case msg_eqSet:
+    			eqClass++;
+    			if (eqClass > EQ_Bass) eqClass = EQ_Normal;
+    			DFP_set_eq(eqClass);
+    			//
+    			sprintf(buf, " eq : %s ", eqName[eqClass]);
+    			mkLineCenter(buf, FONT_WIDTH);
+    			i2c_ssd1306_text_xy(buf, 1, 7);
+    		break;
+    		case msg_eqGet:
+    		    DFP_get_eq();
+    		break;
+    		case msg_back:
+    			DFP_play_previous();
+    			//
+    			putMsg(msg_track);
+    		break;
+    		case msg_volUp:
+    			DFP_volumeUP();
+    			if (dfp_volume < 30) dfp_volume++;
+    			//
+    			sprintf(buf, " Volume : %d ", dfp_volume);
+    			mkLineCenter(buf, FONT_WIDTH);
+    			i2c_ssd1306_text_xy(buf, 1, 7);
+    		break;
+    		case msg_volDown:
+    			DFP_volumeDOWN();
+    			if (dfp_volume > 0) dfp_volume--;
+    			//
+    			sprintf(buf, " Volume : %d ", dfp_volume);
+    			mkLineCenter(buf, FONT_WIDTH);
+    			i2c_ssd1306_text_xy(buf, 1, 7);
+    		break;
+    		case msg_volGet:
+    			DFP_get_volume();
+    		break;
+    		case msg_track:
+    			DFP_get_playing();
+    		break;
+    		case msg_dfpRX:
+    		{
+#ifdef DFP_DUBUG
+    			stx[0] = '\0';
+    			for (int i = 0; i < dfp_ACK_len; i++) sprintf(stx+strlen(stx), " %02X", *(dfp_ACK + i));
+    			Report("msg_dfpRX", true, "%s\n", stx);
+#endif
+    			cmd_t *ack = (cmd_t *)&dfp_ACK[0];
+    			bool ys = false;
+    			switch (dfpCmd) {
+    				case DFPLAYER_QUERY_VOLUME:
+    					dfp_volume = ack->par2;
+    					sprintf(buf, " Volume : %d ", dfp_volume);
+    					ys = true;
+    				break;
+    				case DFPLAYER_QUERY_EQ:
+    					eqClass = ack->par2;
+    					sprintf(buf, " Eq : %s ", eqName[eqClass]);
+    					ys = true;
+    				break;
+    				case DFPLAYER_QUERY_SD_TRACK:
+    					sprintf(buf, " Track : %d ", ack->par2);
+    					ys = true;
+    				break;
+    			}
+    			if (ys) {
+    				mkLineCenter(buf, FONT_WIDTH);
+    				i2c_ssd1306_text_xy(buf, 1, 7);
+    			}
+    		}
+    		break;
+#endif
     		case msg_sec:
     		{
     			uint32_t cur_sec = get_tmr(0);
     			sec_to_str_time(cur_sec, buf);
-//#ifdef SET_KBD
-//    			sprintf(buf+strlen(buf), "\nKBD:%d %lu %04X", kbdState, kbdCnt, kbdCode);
-//#endif
     			sprintf(buf+strlen(buf), "\nFIFO:%u %u\nERROR: 0x%02X", cnt_evt, max_evt, devError);
 #ifdef SET_OLED_I2C
     			i2c_ssd1306_text_xy(buf, 2, 1);
@@ -645,6 +805,39 @@ static void MX_USART1_UART_Init(void)
 }
 
 /**
+  * @brief USART6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART6_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART6_Init 0 */
+
+  /* USER CODE END USART6_Init 0 */
+
+  /* USER CODE BEGIN USART6_Init 1 */
+
+  /* USER CODE END USART6_Init 1 */
+  huart6.Instance = USART6;
+  huart6.Init.BaudRate = 9600;
+  huart6.Init.WordLength = UART_WORDLENGTH_8B;
+  huart6.Init.StopBits = UART_STOPBITS_1;
+  huart6.Init.Parity = UART_PARITY_NONE;
+  huart6.Init.Mode = UART_MODE_TX_RX;
+  huart6.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart6.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART6_Init 2 */
+
+  /* USER CODE END USART6_Init 2 */
+
+}
+
+/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
@@ -667,6 +860,9 @@ static void MX_DMA_Init(void)
   /* DMA2_Stream3_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream3_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream3_IRQn);
+  /* DMA2_Stream6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream6_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream6_IRQn);
   /* DMA2_Stream7_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream7_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream7_IRQn);
@@ -950,6 +1146,22 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		} else rx_uk++;
 
 		HAL_UART_Receive_IT(huart, (uint8_t *)&uRxByte, 1);
+	} else if (huart->Instance == USART6) {
+		if (dfp_uRxByte == DFPLAYER_START_BYTE) dfp_Begin = true;
+		if (dfp_Begin) {
+			dfp_RxBuf[dfp_rx_uk & 0x3f] = dfp_uRxByte;
+			dfp_rx_uk++;
+		}
+		if (dfp_uRxByte == DFPLAYER_END_BYTE) {//end of pack
+			memcpy(dfp_ACK, dfp_RxBuf, dfp_rx_uk);
+			dfp_ACK_len = dfp_rx_uk;
+			dfp_rx_uk = 0;
+			dfp_Begin = false;
+			memset(dfp_RxBuf, 0, sizeof(dfp_RxBuf));
+			putMsg(msg_dfpRX);
+		}
+
+		HAL_UART_Receive_IT(huart, (uint8_t *)&dfp_uRxByte, 1);
 	}
 
 }
