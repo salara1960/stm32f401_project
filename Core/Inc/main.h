@@ -184,6 +184,7 @@ uint8_t Report(const char *tag, bool addTime, const char *fmt, ...);
 #ifdef SET_DFPLAYER
 	UART_HandleTypeDef *portDFP;
 	uint8_t dfpCmd;
+	uint8_t dfpRdy;
 #endif
 
 uint8_t devError;

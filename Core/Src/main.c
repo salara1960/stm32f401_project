@@ -73,7 +73,7 @@ DMA_HandleTypeDef hdma_usart6_tx;
 //const char *version = "0.5 (28.04.2021)";//support KBD done !
 //const char *version = "0.6 (01.05.2021)";// add DFPlayer and connect to ARM via USART6(9600 8N1)
 //const char *version = "0.7 (02.05.2021)";// add library for DFPlayer
-const char *version = "0.8 (03.05.2021)";// major changes for DFPlayer support (add rx via interrupt)
+const char *version = "0.8 (03.05.2021)";// major changes for DFPlayer support (add recv. in interrupt mode)
 
 
 static evt_t evt_fifo[MAX_FIFO_SIZE] = {msg_empty};
@@ -82,8 +82,10 @@ uint8_t wr_evt_adr = 0;
 uint8_t wr_evt_err = 0;
 uint8_t cnt_evt = 0;
 uint8_t max_evt = 0;
+UART_HandleTypeDef *portLOG = &huart1;
 
-volatile time_t epoch = 1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
+
+volatile time_t epoch = 1620036392;//1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -122,7 +124,7 @@ bool kbdEnable = false;
 #ifdef SET_DFPLAYER
 	UART_HandleTypeDef *portDFP = &huart6;
 	int eqClass = EQ_Normal;
-	int dfp_volume = 30;
+	int dfp_volume = DFPLAYER_MAX_VOLUME;
 	uint8_t dfpCmd = 0;
 	//
 	static char dfp_RxBuf[MAX_UART_BUF];
@@ -134,6 +136,9 @@ bool kbdEnable = false;
 	uint8_t dfp_ACK_len = 0;
 	bool dfp_Begin = false;
 	bool dfp_End = false;
+	uint32_t dfp_tmr_next = 0;
+	uint16_t dfp_track = 0;
+	bool dfp_pause = false;
 #endif
 
 /* USER CODE END PV */
@@ -280,8 +285,10 @@ int main(void)
 
 
     //"start" rx_interrupt
-    HAL_UART_Receive_IT(&huart1, (uint8_t *)&uRxByte, 1);
-    HAL_UART_Receive_IT(&huart6, (uint8_t *)&dfp_uRxByte, 1);
+    HAL_UART_Receive_IT(portLOG, (uint8_t *)&uRxByte, 1);
+#ifdef SET_DFPLAYER
+    HAL_UART_Receive_IT(portDFP, (uint8_t *)&dfp_uRxByte, 1);
+#endif
 
     // start timer3 in interrupt mode
     HAL_TIM_Base_Start_IT(&htim3);
@@ -311,15 +318,20 @@ int main(void)
 
     int8_t cn = 4;
     while (--cn) {
-    	HAL_Delay(500);
+    	HAL_Delay(250);
     	if (W25qxx_Init()) break;
     }
 #endif
 
 #ifdef SET_DFPLAYER
+    uint8_t idDev = 0;
+    uint8_t lnum = 4;
     DFP_reset();
-    HAL_Delay(100);
+    HAL_Delay(50);
     DFP_set_eq(eqClass);
+    HAL_Delay(50);
+    dfp_volume = DFPLAYER_MAX_VOLUME >> 1;
+    DFP_set_volume(dfp_volume);
 #endif
 
     evt_t evt = msg_none;
@@ -350,46 +362,59 @@ int main(void)
     			switch (kbdCode) {
     				case '*':
     					new_evt = msg_play;
-    				break;
+    					break;
     				case '0':
     					new_evt = msg_rplay;
-    				break;
+    					break;
     				case '#':
     					new_evt = msg_stop;
-    				break;
+    					break;
+    				//
     				case '9':
     					new_evt = msg_back;
-    				break;
+    					break;
     				case '8':
     					new_evt = msg_eqSet;
-    				break;
+    					break;
     				case '7':
     					new_evt = msg_fwd;
-    				break;
+    					break;
+    				//
     				case '6':
     					new_evt = msg_volDown;
-    				break;
+    					break;
     				case '5':
     					new_evt = msg_volGet;
-    				break;
+    					break;
     				case '4':
     					new_evt = msg_volUp;
-    				break;
+    					break;
+    				//
+    				case '3':
+    					break;
     				case '2':
     					new_evt = msg_eqGet;
-    				break;
+    					break;
+    				case '1':
+    					break;
     			}
     			if (new_evt != msg_none) putMsg(new_evt);
 #endif
     		break;
 #ifdef SET_DFPLAYER
     		case msg_play:
-    			DFP_play();
+    			DFP_play_root(1, false);//DFP_play();
     			//
     			putMsg(msg_track);
     		break;
     		case msg_rplay:
-    			DFP_play_root(1, true);
+    			if (!dfp_pause) {
+    				dfp_pause = true;
+    				DFP_pause();//DFP_play_root(1, false);
+    			} else {
+    				dfp_pause = false;
+    				DFP_unpause();//DFP_play_root(1, false);
+    			}
     			//
     			putMsg(msg_track);
     		break;
@@ -410,9 +435,9 @@ int main(void)
     			if (eqClass > EQ_Bass) eqClass = EQ_Normal;
     			DFP_set_eq(eqClass);
     			//
-    			sprintf(buf, " eq : %s ", eqName[eqClass]);
+    			sprintf(buf, " Eq : %s ", eqName[eqClass]);
     			mkLineCenter(buf, FONT_WIDTH);
-    			i2c_ssd1306_text_xy(buf, 1, 7);
+    			i2c_ssd1306_text_xy(buf, 1, 6);
     		break;
     		case msg_eqGet:
     		    DFP_get_eq();
@@ -424,11 +449,11 @@ int main(void)
     		break;
     		case msg_volUp:
     			DFP_volumeUP();
-    			if (dfp_volume < 30) dfp_volume++;
+    			if (dfp_volume < DFPLAYER_MAX_VOLUME) dfp_volume++;
     			//
     			sprintf(buf, " Volume : %d ", dfp_volume);
     			mkLineCenter(buf, FONT_WIDTH);
-    			i2c_ssd1306_text_xy(buf, 1, 7);
+    			i2c_ssd1306_text_xy(buf, 1, 5);
     		break;
     		case msg_volDown:
     			DFP_volumeDOWN();
@@ -436,7 +461,7 @@ int main(void)
     			//
     			sprintf(buf, " Volume : %d ", dfp_volume);
     			mkLineCenter(buf, FONT_WIDTH);
-    			i2c_ssd1306_text_xy(buf, 1, 7);
+    			i2c_ssd1306_text_xy(buf, 1, 5);
     		break;
     		case msg_volGet:
     			DFP_get_volume();
@@ -447,31 +472,51 @@ int main(void)
     		case msg_dfpRX:
     		{
 #ifdef DFP_DUBUG
-    			stx[0] = '\0';
+    			stx[0] = '\0';//memset(stx, 0, sizeof(stx));
     			for (int i = 0; i < dfp_ACK_len; i++) sprintf(stx+strlen(stx), " %02X", *(dfp_ACK + i));
     			Report("msg_dfpRX", true, "%s\n", stx);
 #endif
     			cmd_t *ack = (cmd_t *)&dfp_ACK[0];
+    			dfpCmd = ack->ccode;
     			bool ys = false;
     			switch (dfpCmd) {
+    				case DFPLAYER_QUERY_STORAGE_DEV:
+    					lnum = 4;
+    					idDev = ack->par2;
+    					if (idDev >= DFPLAYER_MAX_STORAGES) idDev = 0;
+    					sprintf(buf, " Storage : %s ", storageName[idDev]);//ack->par2);
+    					ys = true;
+    					DFP_set_storage(idDev);//if (idDev) putMsg(msg_playDev);
+    					break;
+    				case DFPLAYER_QUERY_TRACK_END:
+    				case DFPLAYER_QUERY_UTRACK_END:
+    					if (!dfp_tmr_next) dfp_tmr_next = get_tmr(2); //putMsg(msg_fwd);//goto play next track
+    					break;
     				case DFPLAYER_QUERY_VOLUME:
+    					lnum = 5;
     					dfp_volume = ack->par2;
     					sprintf(buf, " Volume : %d ", dfp_volume);
     					ys = true;
-    				break;
+    					break;
     				case DFPLAYER_QUERY_EQ:
+    					lnum = 6;
     					eqClass = ack->par2;
     					sprintf(buf, " Eq : %s ", eqName[eqClass]);
     					ys = true;
-    				break;
+    					break;
     				case DFPLAYER_QUERY_SD_TRACK:
-    					sprintf(buf, " Track : %d ", ack->par2);
+    					lnum = 7;
+    					dfp_track = ((ack->par1 << 8) | ack->par2) & 0xfff;
+    					sprintf(buf, " Track : %d ", dfp_track);
     					ys = true;
-    				break;
+    					break;
+    				case DFPLAYER_QUERY_ERROR:// Returned data of errors
+    					if (ack->par2) devError |= devDFP;// ack->par2 - error code
+    					break;
     			}
     			if (ys) {
     				mkLineCenter(buf, FONT_WIDTH);
-    				i2c_ssd1306_text_xy(buf, 1, 7);
+    				i2c_ssd1306_text_xy(buf, 1, lnum);
     			}
     		}
     		break;
@@ -492,6 +537,13 @@ int main(void)
     			}
     		}
     		break;
+    	}
+
+    	if (dfp_tmr_next) {
+    		if (check_tmr(dfp_tmr_next)) {
+    			dfp_tmr_next = 0;
+    			putMsg(msg_fwd);//goto play next track
+    		}
     	}
 
     /* USER CODE END WHILE */
@@ -861,7 +913,7 @@ static void MX_DMA_Init(void)
   HAL_NVIC_SetPriority(DMA2_Stream3_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream3_IRQn);
   /* DMA2_Stream6_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream6_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA2_Stream6_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream6_IRQn);
   /* DMA2_Stream7_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream7_IRQn, 3, 0);
@@ -1116,6 +1168,8 @@ int dl = 0;
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart->Instance == USART1) uartRdy = 1;
+	else
+	if (huart->Instance == USART6) dfpRdy = 1;
 }
 //------------------------------------------------------------------------------------------
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
@@ -1161,7 +1215,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 			putMsg(msg_dfpRX);
 		}
 
-		HAL_UART_Receive_IT(huart, (uint8_t *)&dfp_uRxByte, 1);
+		HAL_UART_Receive_IT(huart, &dfp_uRxByte, 1);
 	}
 
 }
@@ -1199,14 +1253,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 #ifdef SET_KBD
 	if (GPIO_Pin == KBD_INT_Pin) {
 		if (kbdEnable) {
-			//kbdState = HAL_GPIO_ReadPin(KBD_INT_GPIO_Port, KBD_INT_Pin);
-			//if (kbdState == GPIO_PIN_RESET)
-				kbdCode = kbd_get_touch();
-				if (kbdCode >= 0x23) {
-					kbdCnt++;
-					putMsg(msg_kbd);
-				}
-			//}
+			kbdCode = kbd_get_touch();
+			if ((kbdCode >= 0x23) && (kbdCode <= 0x39)) {// '#'...'9'
+				kbdCnt++;
+				putMsg(msg_kbd);
+			}
 		}
 	}
 #endif

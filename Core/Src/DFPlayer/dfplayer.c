@@ -16,8 +16,9 @@
 //******************************************************************************************
 
 uint8_t dfp_withDMA = 1;
-uint32_t dfp_wait = 2200;
-const char *eqName[] = {"Normal", "Pop", "Rock", "Jazz", "Classic", "Bass"};
+uint32_t dfp_wait = 1000;
+const char *eqName[DFPLAYER_MAX_EQ] = {"Normal", "Pop", "Rock", "Jazz", "Classic", "Bass"};
+const char *storageName[DFPLAYER_MAX_STORAGES] = {"???", "USB", "SD", "USB+SD", "PC"};
 
 #ifdef DFP_DUBUG
 	char stz[128] = {0};
@@ -71,6 +72,16 @@ static char *cmdName(uint8_t command)
 			return "DFPLAYER_PLAY_RANDOM";
 		case DFPLAYER_REPEAT_CURRENT://     0x19
 			return "DFPLAYER_REPEAT_CURRENT";
+		case DFPLAYER_QUERY_STORAGE_DEV://  0x3F //Query current online storage device
+			return "DFPLAYER_QUERY_STORAGE_DEV";
+		case DFPLAYER_QUERY_TRACK_END://    0x3D //end of play track (SD)
+			return "DFPLAYER_QUERY_TRACK_END";
+		case DFPLAYER_QUERY_UTRACK_END://   0x3C //end of play track (USB)
+			return "DFPLAYER_QUERY_UTRACK_END";
+		case DFPLAYER_QUERY_ERROR://        0x40 //Returned data of errors
+			return "DFPLAYER_QUERY_ERROR";
+		case DFPLAYER_QUERY_ACK://          0x41 //Module reports a feedback with this command
+			return "DFPLAYER_QUERY_ACK";
 		case DFPLAYER_QUERY_STATUS://       0x42
 			return "DFPLAYER_QUERY_STATUS";
 		case DFPLAYER_QUERY_VOLUME://       0x43
@@ -124,6 +135,7 @@ void send_cmd(uint8_t command, uint8_t param1, uint8_t param2)
 
 	dfpCmd = command;
 
+	dfpRdy = 0;
 	if (dfp_withDMA) {
 		if (HAL_UART_Transmit_DMA(portDFP, uk, len) != HAL_OK) devError |= devDFP;
 		while (HAL_UART_GetState(portDFP) != HAL_UART_STATE_READY) {
@@ -132,58 +144,23 @@ void send_cmd(uint8_t command, uint8_t param1, uint8_t param2)
 		}
 	} else {
 		if (HAL_UART_Transmit(portDFP, uk, len, dfp_wait) != HAL_OK) devError |= devDFP;
+		dfpRdy = 1;
 	}
 #ifdef DFP_DUBUG
-	stz[0] = '\0';
+	stz[0] = '\0';//memset(stz, 0, sizeof(stz));
 	for (int i = 0; i < len; i++) sprintf(stz+strlen(stz), " %02X", *(uk + i));
 	Report(cmdName(cmd.ccode), true, "%s\n", stz);
 #endif
 
 }
 //-----------------------------------------------------------------------------------------
-int8_t ser_available()
-{
-	return 1;
-}
-//-----------------------------------------------------------------------------------------
-uint8_t ser_read()
-{
-	return 0;
-}
-//-----------------------------------------------------------------------------------------
 int read_cmd(uint8_t command, uint8_t param1, uint8_t param2)
 {
-/*
-int result = 0;
-int timeout = DFPLAYER_READ_TIMEOUT;
-int i = 0;
-*/
-
 	send_cmd(command, param1, param2);
 
-	/*while (timeout-- > 0 && i < 10) {
-		if (ser_available() > 0) {
-			uint8_t b = ser_read();
-			i++;
+	// read data from device in interrup mode
 
-			if (i == 7) result = b;
-		} else {
-			DFP_delay(1);
-		}
-	}*/
-	/*
-	const uint16_t len = 10;
-	uint8_t dat[10] = {0};
-	if (HAL_UART_Receive_IT(portDFP, dat, 10) != HAL_OK) devError |= devDFP;
-
-#ifdef DFP_DUBUG
-	stz[0] = '\0';
-	for (int i = 0; i < len; i++) sprintf(stz+strlen(stz), " %02X", *(dat + i));
-	Report(__func__, true, "%s\n", stz);
-#endif
-	*/
-
-	return 0;//dat[7];
+	return 0;
 }
 //-----------------------------------------------------------------------------------------
 void DFP_reset()
@@ -326,7 +303,10 @@ int DFP_get_playing()
 	return read_cmd(DFPLAYER_QUERY_SD_TRACK, 0, 0);
 }
 //-----------------------------------------------------------------------------------------
-
+void DFP_set_storage(uint8_t storage)
+{
+	send_cmd(DFPLAYER_PLAYBACK_DEVICE, 0, storage);
+}
 //******************************************************************************************
 
 

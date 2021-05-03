@@ -37,6 +37,12 @@
 #define DFPLAYER_FOLDER_REPEAT      0x17
 #define DFPLAYER_PLAY_RANDOM        0x18
 #define DFPLAYER_REPEAT_CURRENT     0x19
+
+#define DFPLAYER_QUERY_STORAGE_DEV  0x3F //Query current online storage device
+#define DFPLAYER_QUERY_TRACK_END    0x3D //end of play track (SD)
+#define DFPLAYER_QUERY_UTRACK_END   0x3C //end of play track (USB)
+#define DFPLAYER_QUERY_ERROR        0x40 //Returned data of errors
+#define DFPLAYER_QUERY_ACK          0x41 //Module reports a feedback with this command
 #define DFPLAYER_QUERY_STATUS       0x42
 #define DFPLAYER_QUERY_VOLUME       0x43
 #define DFPLAYER_QUERY_EQ           0x44
@@ -57,6 +63,13 @@
 #define DFPLAYER_CMD_DELAY    10
 #define DFPLAYER_READ_TIMEOUT 250
 
+
+#define DFPLAYER_MAX_VOLUME   30
+#define DFPLAYER_MAX_EQ       6
+#define DFPLAYER_MAX_STORAGES 5
+
+
+
 #define DFP_delay(x) HAL_Delay(x)
 
 #define htons(x) \
@@ -64,7 +77,6 @@
 #define htonl(x) \
     ((uint32_t)((x >> 24) | ((x >> 8) & 0xff00) | ((x << 8) & 0xff0000) | ((x << 24) & 0xff000000)))
 
-#define DFP_DUBUG
 
 //------------------------------------------------------------------------------------------
 
@@ -101,33 +113,8 @@ typedef struct {
 //------------------------------------------------------------------------------------------
 
 uint8_t dfp_withDMA;
-const char *eqName[];
-
-//------------------------------------------------------------------------------------------
-	/* Static Members
-    static const byte DFPLAYER_START_BYTE   = 0x7E;
-    static const byte DFPLAYER_VERSION_BYTE = 0xFF;
-    static const byte DFPLAYER_CMD_LEN_BYTE = 0x06;
-    static const byte DFPLAYER_NO_ACK_BYTE  = 0x00;
-    static const byte DFPLAYER_ACK_BYTE     = 0x01;
-    static const byte DFPLAYER_END_BYTE     = 0xEF;
-    static const int  DFPLAYER_INIT_DELAY   = 250;
-    static const int  DFPLAYER_CMD_DELAY    = 10;
-    static const int  DFPLAYER_READ_TIMEOUT = 250;
-
-    // Members
-    bool initialized_;
-    SerialMode serial_mode_;
-    SoftwareSerial *software_serial_;
-
-    // Methods
-    void execute_cmd(byte command);
-    void execute_cmd(byte command, byte param1, byte param2);
-    int read_cmd(byte command);
-    int read_cmd(byte command, byte param1, byte param2);
-    int serial_available();
-    int serial_read();
-    void serial_write(byte b);*/
+const char *eqName[DFPLAYER_MAX_EQ];
+const char *storageName[DFPLAYER_MAX_STORAGES];
 
 //------------------------------------------------------------------------------------------
 
@@ -148,18 +135,9 @@ const char *eqName[];
     void DFP_set_eq(int eq);
     int DFP_get_eq();
     int DFP_get_playing();
+    void DFP_set_storage(uint8_t storage);
 
-
-
-    /* Settings
-    void DFP_increase_volume();
-    void DFP_decrease_volume();
-    void DFP_set_volume(int volume);
-    int DFP_get_volume();
-    void DFP_set_eq(Equalizer eq);
-    Equalizer DFP_get_eq();
-
-    // Playback
+    /* Playback
     void DFP_stop();
     void DFP_pause();
     void DFP_unpause();

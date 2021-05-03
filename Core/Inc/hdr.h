@@ -14,6 +14,9 @@
 #define SET_W25FLASH
 
 #define SET_DFPLAYER
+#ifdef SET_DFPLAYER
+	#define DFP_DUBUG
+#endif
 
 
 

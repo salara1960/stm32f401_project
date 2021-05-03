@@ -1,5 +1,5 @@
 # stm32f401_project
-hardware : stm32f401 + w25q64 + mpr121 + ssd1306
+hardware : stm32f401 + w25q64 + mpr121 + ssd1306 + DFPlayer mini
 
 Hardware components :
 
@@ -7,7 +7,8 @@ Hardware components :
 * STM32F401 (clone Black Pill board)
 * ssd1306 OLED display 128x64 (i2c with DMA)
 * W25Q64 chip - flash memory 8MB (spi with DMA)
-* MPR121 - Capacitive Touch Keypad (i2c)
+* MPR121 - Capacitive Touch Keypad (i2c with external IT)
+* DFPlayer mini - mp3/wav player with microSD (uart with DMA & IT)
 ```
 
 Software components :
