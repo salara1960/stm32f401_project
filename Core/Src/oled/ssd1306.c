@@ -193,7 +193,7 @@ HAL_StatusTypeDef rt = HAL_OK;
 	if (rt != HAL_OK) devError |= devI2C;
 }
 //-----------------------------------------------------------------------------------------
-void i2c_ssd1306_text_xy(const char *stroka, uint8_t cx, uint8_t cy)
+void i2c_ssd1306_text_xy(const char *stroka, uint8_t cx, uint8_t cy, bool inv)
 {
 HAL_StatusTypeDef rt = HAL_OK;
 uint8_t i, lin = cy - 1, col = cx - 1;
@@ -224,6 +224,7 @@ uint8_t first[] = {
 				}
 			} else {
 				memcpy(&cif[1], &font8x8[(uint8_t)stroka[i]][0], 8);
+				if (inv) for (uint8_t j = 1; j < sizeof(cif); j++) cif[j] = ~cif[j];
 				if (dma) {
 					rt = HAL_I2C_Master_Transmit_DMA(portOLED, OLED_I2C_ADDRESS, cif, sizeof(cif));
 					while (HAL_I2C_GetState(portOLED) != HAL_I2C_STATE_READY) {}
@@ -239,7 +240,7 @@ uint8_t first[] = {
 //-----------------------------------------------------------------------------------------
 void i2c_ssd1306_text(const char *stroka)
 {
-	if (stroka) i2c_ssd1306_text_xy(stroka, 1, 1);
+	if (stroka) i2c_ssd1306_text_xy(stroka, 1, 1, false);
 }
 //-----------------------------------------------------------------------------------------
 char *mkLineCenter(char *str, uint16_t width)

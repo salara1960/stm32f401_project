@@ -84,8 +84,8 @@ uint8_t cnt_evt = 0;
 uint8_t max_evt = 0;
 UART_HandleTypeDef *portLOG = &huart1;
 
-
-volatile time_t epoch = 1620036392;//1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
+//1620036392;//1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
+volatile time_t epoch = 1620063356;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -180,7 +180,7 @@ void putMsg(evt_t evt)
 
 	HAL_NVIC_DisableIRQ(EXTI1_IRQn);
 	HAL_NVIC_DisableIRQ(TIM3_IRQn);
-	HAL_NVIC_DisableIRQ(USART1_IRQn);
+//	HAL_NVIC_DisableIRQ(USART1_IRQn);
 	HAL_NVIC_DisableIRQ(USART6_IRQn);
 //	HAL_NVIC_DisableIRQ(SPI1_IRQn);
 
@@ -203,7 +203,7 @@ void putMsg(evt_t evt)
 
 //	HAL_NVIC_EnableIRQ(SPI1_IRQn);
 	HAL_NVIC_EnableIRQ(USART6_IRQn);
-	HAL_NVIC_EnableIRQ(USART1_IRQn);
+//	HAL_NVIC_EnableIRQ(USART1_IRQn);
 	HAL_NVIC_EnableIRQ(TIM3_IRQn);
 	HAL_NVIC_EnableIRQ(EXTI1_IRQn);
 
@@ -215,7 +215,7 @@ evt_t ret = msg_empty;
 
 	HAL_NVIC_DisableIRQ(EXTI1_IRQn);
 	HAL_NVIC_DisableIRQ(TIM3_IRQn);
-	HAL_NVIC_DisableIRQ(USART1_IRQn);
+//	HAL_NVIC_DisableIRQ(USART1_IRQn);
 	HAL_NVIC_DisableIRQ(USART6_IRQn);
 //	HAL_NVIC_DisableIRQ(SPI1_IRQn);
 
@@ -231,7 +231,7 @@ evt_t ret = msg_empty;
 
 //	HAL_NVIC_EnableIRQ(SPI1_IRQn);
 	HAL_NVIC_EnableIRQ(USART6_IRQn);
-	HAL_NVIC_EnableIRQ(USART1_IRQn);
+//	HAL_NVIC_EnableIRQ(USART1_IRQn);
 	HAL_NVIC_EnableIRQ(TIM3_IRQn);
 	HAL_NVIC_EnableIRQ(EXTI1_IRQn);
 
@@ -355,7 +355,7 @@ int main(void)
     			//kbdCode = kbd_get_touch();
     			sprintf(buf, "KBD: <%c>", (char)kbdCode);
     			mkLineCenter(buf, FONT_WIDTH);
-    			i2c_ssd1306_text_xy(buf, 1, 8);
+    			i2c_ssd1306_text_xy(buf, 1, 3, false);
 #endif
 #ifdef SET_DFPLAYER
     			evt_t new_evt = msg_none;
@@ -420,10 +420,11 @@ int main(void)
     		break;
     		case msg_stop:
     			DFP_stop();
+    			dfp_pause = true;
     			//
     			strcpy(buf, " Stop ");
     			mkLineCenter(buf, FONT_WIDTH);
-    			i2c_ssd1306_text_xy(buf, 1, 7);
+    			i2c_ssd1306_text_xy(buf, 1, 8, true);
     		break;
     		case msg_fwd:
     			DFP_play_next();
@@ -437,7 +438,7 @@ int main(void)
     			//
     			sprintf(buf, " Eq : %s ", eqName[eqClass]);
     			mkLineCenter(buf, FONT_WIDTH);
-    			i2c_ssd1306_text_xy(buf, 1, 6);
+    			i2c_ssd1306_text_xy(buf, 1, 7, false);
     		break;
     		case msg_eqGet:
     		    DFP_get_eq();
@@ -453,7 +454,7 @@ int main(void)
     			//
     			sprintf(buf, " Volume : %d ", dfp_volume);
     			mkLineCenter(buf, FONT_WIDTH);
-    			i2c_ssd1306_text_xy(buf, 1, 5);
+    			i2c_ssd1306_text_xy(buf, 1, 6, false);
     		break;
     		case msg_volDown:
     			DFP_volumeDOWN();
@@ -461,7 +462,7 @@ int main(void)
     			//
     			sprintf(buf, " Volume : %d ", dfp_volume);
     			mkLineCenter(buf, FONT_WIDTH);
-    			i2c_ssd1306_text_xy(buf, 1, 5);
+    			i2c_ssd1306_text_xy(buf, 1, 6, false);
     		break;
     		case msg_volGet:
     			DFP_get_volume();
@@ -479,9 +480,10 @@ int main(void)
     			cmd_t *ack = (cmd_t *)&dfp_ACK[0];
     			dfpCmd = ack->ccode;
     			bool ys = false;
+    			bool inv = false;
     			switch (dfpCmd) {
     				case DFPLAYER_QUERY_STORAGE_DEV:
-    					lnum = 4;
+    					lnum = 5;
     					idDev = ack->par2;
     					if (idDev >= DFPLAYER_MAX_STORAGES) idDev = 0;
     					sprintf(buf, " Storage : %s ", storageName[idDev]);//ack->par2);
@@ -493,19 +495,20 @@ int main(void)
     					if (!dfp_tmr_next) dfp_tmr_next = get_tmr(2); //putMsg(msg_fwd);//goto play next track
     					break;
     				case DFPLAYER_QUERY_VOLUME:
-    					lnum = 5;
+    					lnum = 6;
     					dfp_volume = ack->par2;
     					sprintf(buf, " Volume : %d ", dfp_volume);
     					ys = true;
     					break;
     				case DFPLAYER_QUERY_EQ:
-    					lnum = 6;
+    					lnum = 7;
     					eqClass = ack->par2;
     					sprintf(buf, " Eq : %s ", eqName[eqClass]);
     					ys = true;
     					break;
     				case DFPLAYER_QUERY_SD_TRACK:
-    					lnum = 7;
+    					lnum = 8;
+    					inv = true;
     					dfp_track = ((ack->par1 << 8) | ack->par2) & 0xfff;
     					sprintf(buf, " Track : %d ", dfp_track);
     					ys = true;
@@ -516,7 +519,7 @@ int main(void)
     			}
     			if (ys) {
     				mkLineCenter(buf, FONT_WIDTH);
-    				i2c_ssd1306_text_xy(buf, 1, lnum);
+    				i2c_ssd1306_text_xy(buf, 1, lnum, inv);
     			}
     		}
     		break;
@@ -524,10 +527,12 @@ int main(void)
     		case msg_sec:
     		{
     			uint32_t cur_sec = get_tmr(0);
-    			sec_to_str_time(cur_sec, buf);
-    			sprintf(buf+strlen(buf), "\nFIFO:%u %u\nERROR: 0x%02X", cnt_evt, max_evt, devError);
 #ifdef SET_OLED_I2C
-    			i2c_ssd1306_text_xy(buf, 2, 1);
+    			sec_to_str_time(cur_sec, buf);
+    			i2c_ssd1306_text_xy(mkLineCenter(buf, FONT_WIDTH), 1, 1, true);
+    			//
+    			sprintf(buf, "Fifo:%u %u Err:%X", cnt_evt, max_evt, devError);
+    			i2c_ssd1306_text_xy(buf, 1, 2, false);
 #endif
     			if (cur_sec >= (uint32_t)epoch) {
     				if (cur_sec == last_sec)
@@ -1215,7 +1220,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 			putMsg(msg_dfpRX);
 		}
 
-		HAL_UART_Receive_IT(huart, &dfp_uRxByte, 1);
+		HAL_UART_Receive_IT(huart, (uint8_t *)&dfp_uRxByte, 1);
 	}
 
 }

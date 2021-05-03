@@ -136,23 +136,14 @@ const char *storageName[DFPLAYER_MAX_STORAGES];
     int DFP_get_eq();
     int DFP_get_playing();
     void DFP_set_storage(uint8_t storage);
-
-    /* Playback
-    void DFP_stop();
     void DFP_pause();
     void DFP_unpause();
-    void DFP_play();
-    void DFP_play_next();
-    void DFP_play_previous();
-    void DFP_play_root0(int track);
-    void DFP_play_root(int track, bool repeat);
-    void DFP_play_folder0(int folder, int track);
-    void DFP_play_folder(int folder, int track, bool repeat);
+
+    /* Playback
     void DFP_play_mp30(int track);
     void DFP_play_mp3(int track, bool repeat);
     void DFP_play_ad(int track);
     void DFP_stop_ad();
-    void DFP_repeat(bool repeat);
 
     // Folders/Tracks
     int DFP_get_folders();

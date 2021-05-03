@@ -81,7 +81,7 @@
 	void i2c_ssd1306_pattern();
 	void i2c_ssd1306_contrast(uint8_t value);
 	void i2c_ssd1306_clear_line(uint8_t cy);
-	void i2c_ssd1306_text_xy(const char *stroka, uint8_t cx, uint8_t cy);
+	void i2c_ssd1306_text_xy(const char *stroka, uint8_t cx, uint8_t cy, bool inv);
 	void i2c_ssd1306_text(const char *stroka);
 	char *mkLineCenter(char *str, uint16_t width);
 	char *mkLineWidth(char *str1, char *str2, uint16_t width);
