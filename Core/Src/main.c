@@ -73,7 +73,8 @@ DMA_HandleTypeDef hdma_usart6_tx;
 //const char *version = "0.5 (28.04.2021)";//support KBD done !
 //const char *version = "0.6 (01.05.2021)";// add DFPlayer and connect to ARM via USART6(9600 8N1)
 //const char *version = "0.7 (02.05.2021)";// add library for DFPlayer
-const char *version = "0.8 (03.05.2021)";// major changes for DFPlayer support (add recv. in interrupt mode)
+//const char *version = "0.8 (03.05.2021)";// major changes for DFPlayer support (add recv. in interrupt mode)
+const char *version = "0.9 (05.05.2021)";
 
 
 static evt_t evt_fifo[MAX_FIFO_SIZE] = {msg_empty};
@@ -85,7 +86,7 @@ uint8_t max_evt = 0;
 UART_HandleTypeDef *portLOG = &huart1;
 
 //1620036392;//1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
-volatile time_t epoch = 1620063356;
+volatile time_t epoch = 1620214632;//1620063356;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -334,6 +335,7 @@ int main(void)
     DFP_set_volume(dfp_volume);
 #endif
 
+    bool startOne = true;
     evt_t evt = msg_none;
     uint32_t last_sec = (uint32_t)epoch;
 
@@ -489,6 +491,11 @@ int main(void)
     					sprintf(buf, " Storage : %s ", storageName[idDev]);//ack->par2);
     					ys = true;
     					DFP_set_storage(idDev);//if (idDev) putMsg(msg_playDev);
+    					if (startOne) {
+    						putMsg(msg_volGet);
+    						//putMsg(msg_eqGet);
+    						//startOne = false;
+    					}
     					break;
     				case DFPLAYER_QUERY_TRACK_END:
     				case DFPLAYER_QUERY_UTRACK_END:
@@ -499,6 +506,10 @@ int main(void)
     					dfp_volume = ack->par2;
     					sprintf(buf, " Volume : %d ", dfp_volume);
     					ys = true;
+    					if (startOne) {
+    						putMsg(msg_eqGet);
+    						startOne = false;
+    					}
     					break;
     				case DFPLAYER_QUERY_EQ:
     					lnum = 7;
