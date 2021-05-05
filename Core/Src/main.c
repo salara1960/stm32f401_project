@@ -74,7 +74,7 @@ DMA_HandleTypeDef hdma_usart6_tx;
 //const char *version = "0.6 (01.05.2021)";// add DFPlayer and connect to ARM via USART6(9600 8N1)
 //const char *version = "0.7 (02.05.2021)";// add library for DFPlayer
 //const char *version = "0.8 (03.05.2021)";// major changes for DFPlayer support (add recv. in interrupt mode)
-const char *version = "0.9 (05.05.2021)";
+const char *version = "0.9 (05.05.2021)";//add support folders on storage
 
 
 static evt_t evt_fifo[MAX_FIFO_SIZE] = {msg_empty};
@@ -86,7 +86,7 @@ uint8_t max_evt = 0;
 UART_HandleTypeDef *portLOG = &huart1;
 
 //1620036392;//1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
-volatile time_t epoch = 1620214632;//1620063356;
+volatile time_t epoch = 1620246336;//1620214632;//1620063356;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -138,7 +138,11 @@ bool kbdEnable = false;
 	bool dfp_Begin = false;
 	bool dfp_End = false;
 	uint32_t dfp_tmr_next = 0;
-	uint16_t dfp_track = 0;
+	int8_t dfp_folder = 0;//folder number
+	int8_t dfp_folders = 0;//total folders on storage
+	uint16_t dfp_track = 0;//track number on storage
+	uint16_t dfp_folder_tracks = 0;//total tracks in folder
+	uint16_t dfp_folder_trk = 0;//track number in folder
 	bool dfp_pause = false;
 #endif
 
@@ -162,7 +166,7 @@ bool check_tmr10(uint32_t ms);
 uint32_t get_tmr(uint32_t sec);
 bool check_tmr(uint32_t sec);
 //void floatPart(float val, s_float_t *part);
-//void errLedOn(const char *from);
+void errLedOn(const char *from);
 void set_Date(time_t epoch);
 int sec_to_str_time(uint32_t sec, char *stx);
 uint8_t Report(const char *tag, bool addTime, const char *fmt, ...);
@@ -281,8 +285,10 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+  	HAL_GPIO_WritePin(LED_ERROR_GPIO_Port, LED_ERROR_Pin, GPIO_PIN_SET);
     HAL_Delay(250);
-    HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+    HAL_GPIO_WritePin(LED_ERROR_GPIO_Port, LED_ERROR_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
 
 
     //"start" rx_interrupt
@@ -331,8 +337,16 @@ int main(void)
     HAL_Delay(50);
     DFP_set_eq(eqClass);
     HAL_Delay(50);
-    dfp_volume = DFPLAYER_MAX_VOLUME >> 1;
-    DFP_set_volume(dfp_volume);
+    if (!(devError & devDFP)) {
+    	dfp_volume = DFPLAYER_MAX_VOLUME >> 1;
+    	DFP_set_volume(dfp_volume);
+    	// for folder
+    	dfp_folder = 0;
+    	dfp_folder_tracks = 1;
+    	dfp_folder_trk = 1;
+    	//for storage
+    	dfp_track = 1;
+    }
 #endif
 
     bool startOne = true;
@@ -386,7 +400,7 @@ int main(void)
     					new_evt = msg_volDown;
     					break;
     				case '5':
-    					new_evt = msg_volGet;
+    					//new_evt = msg_volGet;
     					break;
     				case '4':
     					new_evt = msg_volUp;
@@ -395,7 +409,7 @@ int main(void)
     				case '3':
     					break;
     				case '2':
-    					new_evt = msg_eqGet;
+    					//new_evt = msg_eqGet;
     					break;
     				case '1':
     					break;
@@ -405,17 +419,23 @@ int main(void)
     		break;
 #ifdef SET_DFPLAYER
     		case msg_play:
-    			DFP_play_root(1, false);//DFP_play();
-    			//
-    			putMsg(msg_track);
+    			if (!(devError & devDFP)) {
+    				if (dfp_folder > 0) {
+    				DFP_play_folder(dfp_folder, dfp_folder_trk, false);
+    				DFP_get_tracks(dfp_folder);
+    				} else {
+    					DFP_play_root(dfp_track, false);
+    					putMsg(msg_track);
+    				}
+    			}
     		break;
     		case msg_rplay:
     			if (!dfp_pause) {
     				dfp_pause = true;
-    				DFP_pause();//DFP_play_root(1, false);
+    				DFP_pause();
     			} else {
     				dfp_pause = false;
-    				DFP_unpause();//DFP_play_root(1, false);
+    				DFP_unpause();
     			}
     			//
     			putMsg(msg_track);
@@ -428,7 +448,32 @@ int main(void)
     			mkLineCenter(buf, FONT_WIDTH);
     			i2c_ssd1306_text_xy(buf, 1, 8, true);
     		break;
+    		case msg_back:
+    			if (dfp_folder > 0) {
+    				if (dfp_folder_trk <= 1) {
+    					dfp_folder--;
+    					if (!dfp_folder) dfp_folder = dfp_folders;
+    					dfp_folder_trk = 1;
+    					putMsg(msg_play);
+    					break;
+    				} else dfp_folder_trk--;
+    			}
+    			//
+    			DFP_play_previous();
+    			//
+    			putMsg(msg_track);
+    		break;
     		case msg_fwd:
+    			if (dfp_folder > 0) {
+    				if (dfp_folder_trk >= dfp_folder_tracks) {
+    					dfp_folder++;
+    					if (dfp_folder > dfp_folders) dfp_folder = 1;
+    					dfp_folder_trk = 1;
+    					putMsg(msg_play);
+    					break;
+    				} else dfp_folder_trk++;
+    			}
+    			//
     			DFP_play_next();
     			//
     			putMsg(msg_track);
@@ -438,23 +483,18 @@ int main(void)
     			if (eqClass > EQ_Bass) eqClass = EQ_Normal;
     			DFP_set_eq(eqClass);
     			//
-    			sprintf(buf, " Eq : %s ", eqName[eqClass]);
+    			sprintf(buf, " Eq: %s ", eqName[eqClass]);
     			mkLineCenter(buf, FONT_WIDTH);
     			i2c_ssd1306_text_xy(buf, 1, 7, false);
     		break;
     		case msg_eqGet:
     		    DFP_get_eq();
     		break;
-    		case msg_back:
-    			DFP_play_previous();
-    			//
-    			putMsg(msg_track);
-    		break;
     		case msg_volUp:
     			DFP_volumeUP();
     			if (dfp_volume < DFPLAYER_MAX_VOLUME) dfp_volume++;
     			//
-    			sprintf(buf, " Volume : %d ", dfp_volume);
+    			sprintf(buf, " Volume: %d ", dfp_volume);
     			mkLineCenter(buf, FONT_WIDTH);
     			i2c_ssd1306_text_xy(buf, 1, 6, false);
     		break;
@@ -462,7 +502,7 @@ int main(void)
     			DFP_volumeDOWN();
     			if (dfp_volume > 0) dfp_volume--;
     			//
-    			sprintf(buf, " Volume : %d ", dfp_volume);
+    			sprintf(buf, " Volume: %d ", dfp_volume);
     			mkLineCenter(buf, FONT_WIDTH);
     			i2c_ssd1306_text_xy(buf, 1, 6, false);
     		break;
@@ -470,7 +510,13 @@ int main(void)
     			DFP_get_volume();
     		break;
     		case msg_track:
-    			DFP_get_playing();
+    			if (dfp_folder <= 0)
+    				DFP_get_playing();
+    			else
+    				DFP_get_folder_playing(dfp_folder);
+    		break;
+    		case msg_folders:
+    			DFP_get_folders();
     		break;
     		case msg_dfpRX:
     		{
@@ -485,48 +531,74 @@ int main(void)
     			bool inv = false;
     			switch (dfpCmd) {
     				case DFPLAYER_QUERY_STORAGE_DEV:
-    					lnum = 5;
+    					lnum = 4;
     					idDev = ack->par2;
     					if (idDev >= DFPLAYER_MAX_STORAGES) idDev = 0;
-    					sprintf(buf, " Storage : %s ", storageName[idDev]);//ack->par2);
+    					sprintf(buf, "Storage: %s ", storageName[idDev]);//ack->par2);
     					ys = true;
-    					DFP_set_storage(idDev);//if (idDev) putMsg(msg_playDev);
-    					if (startOne) {
-    						putMsg(msg_volGet);
-    						//putMsg(msg_eqGet);
-    						//startOne = false;
+    					//
+    					putMsg(msg_folders);
+    					//
+    				break;
+    				case DFPLAYER_QUERY_FOLDER_FILES:
+    					dfp_folder_tracks = ack->par2;
+    					sprintf(buf, "Folder: %u.%u", dfp_folder, dfp_folder_tracks);
+    					lnum = 5;
+    					ys = true;
+    					//
+    					putMsg(msg_track);
+					break;
+    				case DFPLAYER_QUERY_FOLDERS:
+    					dfp_folders = ack->par2;
+    					sprintf(buf, "Folders: %u ", dfp_folders);
+    					lnum = 5;
+    					ys = true;
+    					//
+    					if (!(devError & devDFP)) {
+    						DFP_set_storage(idDev);//if (idDev) putMsg(msg_playDev);
+    						if (startOne) putMsg(msg_volGet);
     					}
-    					break;
+    				break;
     				case DFPLAYER_QUERY_TRACK_END:
     				case DFPLAYER_QUERY_UTRACK_END:
     					if (!dfp_tmr_next) dfp_tmr_next = get_tmr(2); //putMsg(msg_fwd);//goto play next track
-    					break;
+    				break;
     				case DFPLAYER_QUERY_VOLUME:
     					lnum = 6;
     					dfp_volume = ack->par2;
-    					sprintf(buf, " Volume : %d ", dfp_volume);
+    					sprintf(buf, " Volume: %d ", dfp_volume);
     					ys = true;
     					if (startOne) {
     						putMsg(msg_eqGet);
     						startOne = false;
     					}
-    					break;
+    				break;
     				case DFPLAYER_QUERY_EQ:
     					lnum = 7;
     					eqClass = ack->par2;
-    					sprintf(buf, " Eq : %s ", eqName[eqClass]);
+    					sprintf(buf, " Eq: %s ", eqName[eqClass]);
     					ys = true;
-    					break;
+    				break;
     				case DFPLAYER_QUERY_SD_TRACK:
     					lnum = 8;
     					inv = true;
-    					dfp_track = ((ack->par1 << 8) | ack->par2) & 0xfff;
-    					sprintf(buf, " Track : %d ", dfp_track);
+    					dfp_track = ((ack->par1 << 8) | ack->par2);// & 0xfff;
+    					if (dfp_folder > 0)
+    						sprintf(buf, "Track: %d.%d ", dfp_folder, dfp_track);
+    					else
+    						sprintf(buf, "Track:  .%d ", dfp_track);
     					ys = true;
-    					break;
+    				break;
     				case DFPLAYER_QUERY_ERROR:// Returned data of errors
-    					if (ack->par2) devError |= devDFP;// ack->par2 - error code
-    					break;
+    				{
+    					uint8_t byte = ack->par2;
+    					if (byte) devError |= devDFP;// ack->par2 - error code
+    					lnum = 8;
+    					if (byte >= DFPLAYER_MAX_ERROR) byte = DFPLAYER_MAX_ERROR - 2;
+    					sprintf(buf, "ERR: %s ", errName[byte]);
+    					ys = true;
+    				}
+    				break;
     			}
     			if (ys) {
     				mkLineCenter(buf, FONT_WIDTH);
@@ -551,6 +623,8 @@ int main(void)
     				else
     					last_sec = cur_sec;
     			}
+
+    			if (devError) errLedOn(NULL);
     		}
     		break;
     	}
@@ -956,7 +1030,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(SPI1_NSS_GPIO_Port, SPI1_NSS_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, LED_ERROR_Pin|LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : KBD_INT_Pin */
   GPIO_InitStruct.Pin = KBD_INT_Pin;
@@ -970,6 +1044,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(SPI1_NSS_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : LED_ERROR_Pin */
+  GPIO_InitStruct.Pin = LED_ERROR_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+  HAL_GPIO_Init(LED_ERROR_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LED_Pin */
   GPIO_InitStruct.Pin = LED_Pin;
@@ -986,7 +1067,17 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+//-----------------------------------------------------------------------------------------
+// set LED_ERROR when error on and send message to UART1 (in from != NULL)
+//     from - name of function where error location
+void errLedOn(const char *from)
+{
+	HAL_GPIO_WritePin(LED_ERROR_GPIO_Port, LED_ERROR_Pin, GPIO_PIN_SET);//LED OFF
+	HAL_Delay(20);
+	HAL_GPIO_WritePin(LED_ERROR_GPIO_Port, LED_ERROR_Pin, GPIO_PIN_RESET);//LED ON
 
+	if (from) Report(NULL, true, "Error in function '%s'\r\n", from);
+}
 //------------------------------------------------------------------------------------------
 void set_Date(time_t epoch)
 {
@@ -1141,11 +1232,11 @@ int dl = 0;
 
 
 	if (!uartRdy) {
-		//HAL_GPIO_WritePin(LED_ERROR_GPIO_Port, LED_ERROR_Pin, GPIO_PIN_SET);//ON err_led
+		HAL_GPIO_WritePin(LED_ERROR_GPIO_Port, LED_ERROR_Pin, GPIO_PIN_SET);//ON err_led
 		return 1;
-	} //else {
-		//HAL_GPIO_WritePin(LED_ERROR_GPIO_Port, LED_ERROR_Pin, GPIO_PIN_RESET);//OFF err_led
-	//}
+	} else {
+		HAL_GPIO_WritePin(LED_ERROR_GPIO_Port, LED_ERROR_Pin, GPIO_PIN_RESET);//OFF err_led
+	}
 
 #ifdef SET_STATIC_MEM
 	char *buff = &PrnBuf[0];

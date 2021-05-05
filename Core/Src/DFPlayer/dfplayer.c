@@ -19,6 +19,7 @@ uint8_t dfp_withDMA = 1;
 uint32_t dfp_wait = 1000;
 const char *eqName[DFPLAYER_MAX_EQ] = {"Normal", "Pop", "Rock", "Jazz", "Classic", "Bass"};
 const char *storageName[DFPLAYER_MAX_STORAGES] = {"???", "USB", "SD", "USB+SD", "PC"};
+const char *errName[DFPLAYER_MAX_ERROR] = {"OK", "BUSY", "SLEEP", "SERIAL", "CRC", "TRACK", "NOTRACK", "INSERT", "SD", "UNKNOWN", "SLMODE"};
 
 #ifdef DFP_DUBUG
 	char stz[128] = {0};
@@ -133,7 +134,7 @@ void send_cmd(uint8_t command, uint8_t param1, uint8_t param2)
 
 	uint16_t len = (uint16_t)sizeof(cmd_t);
 
-	dfpCmd = command;
+	//dfpCmd = command;
 
 	dfpRdy = 0;
 	if (dfp_withDMA) {
@@ -258,11 +259,6 @@ void DFP_play_folder(int folder, int track, bool bRepeat)
 	}
 }
 //-----------------------------------------------------------------------------------------
-//void DFP_play0_mp3(int track)
-//{
-//	play_mp3(track, false);
-//}
-//-----------------------------------------------------------------------------------------
 void DFP_play_mp3(int track, bool bRepeat)
 {
 	send_cmd(DFPLAYER_PLAY_MP3, 0, track);
@@ -301,6 +297,11 @@ int DFP_get_tracks(int folder)
 int DFP_get_playing()
 {
 	return read_cmd(DFPLAYER_QUERY_SD_TRACK, 0, 0);
+}
+//-----------------------------------------------------------------------------------------
+int DFP_get_folder_playing(int folder)
+{
+	return read_cmd(DFPLAYER_QUERY_SD_TRACK, folder, 0);
 }
 //-----------------------------------------------------------------------------------------
 void DFP_set_storage(uint8_t storage)

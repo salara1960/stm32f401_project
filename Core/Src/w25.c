@@ -36,7 +36,7 @@ uint8_t W25qxx_Spi(uint8_t Data)
 {
 uint8_t ret;
 
-    HAL_SPI_TransmitReceive(portFLASH, &Data, &ret, 1, 50);//HAL_MAX_DELAY);
+    HAL_SPI_TransmitReceive(portFLASH, &Data, &ret, 1, min_wait_ms);//HAL_MAX_DELAY);
 
     return ret;
 }
@@ -65,8 +65,8 @@ void W25qxx_ReadUniqID(void)
     //W25qxx_Spi(0x4B);
     //for (uint8_t i = 0; i < 4; i++) W25qxx_Spi(W25QXX_DUMMY_BYTE);
     //for (uint8_t i = 0; i < 8; i++) w25qxx.UniqID[i] = W25qxx_Spi(W25QXX_DUMMY_BYTE);
-    HAL_SPI_Transmit(portFLASH, dat, sizeof(dat), 100);
-    HAL_SPI_Receive(portFLASH, w25qxx.UniqID, 8, 100);
+    HAL_SPI_Transmit(portFLASH, dat, sizeof(dat), min_wait_ms);
+    HAL_SPI_Receive(portFLASH, w25qxx.UniqID, 8, min_wait_ms);
 
     W25_UNSELECT();
 }

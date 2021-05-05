@@ -79,6 +79,7 @@ typedef enum {
 	msg_250ms,
 	msg_sec,
 	msg_kbd,
+	msg_folders,
 	msg_play,
 	msg_rplay,
 	msg_stop,
@@ -160,6 +161,8 @@ uint8_t Report(const char *tag, bool addTime, const char *fmt, ...);
 #define KBD_INT_EXTI_IRQn EXTI1_IRQn
 #define SPI1_NSS_Pin GPIO_PIN_4
 #define SPI1_NSS_GPIO_Port GPIOA
+#define LED_ERROR_Pin GPIO_PIN_12
+#define LED_ERROR_GPIO_Port GPIOB
 #define LED_Pin GPIO_PIN_4
 #define LED_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */

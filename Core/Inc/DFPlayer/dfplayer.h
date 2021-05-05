@@ -67,6 +67,8 @@
 #define DFPLAYER_MAX_VOLUME   30
 #define DFPLAYER_MAX_EQ       6
 #define DFPLAYER_MAX_STORAGES 5
+#define DFPLAYER_MAX_ERROR    11
+
 
 
 
@@ -115,6 +117,7 @@ typedef struct {
 uint8_t dfp_withDMA;
 const char *eqName[DFPLAYER_MAX_EQ];
 const char *storageName[DFPLAYER_MAX_STORAGES];
+const char *errName[DFPLAYER_MAX_ERROR];
 
 //------------------------------------------------------------------------------------------
 
@@ -132,9 +135,12 @@ const char *storageName[DFPLAYER_MAX_STORAGES];
     void DFP_play_root(int track, bool bRepeat);
     void DFP_play_folder(int folder, int track, bool bRepeat);
     int DFP_get_track();
+    int DFP_get_tracks();
+    int DFP_get_folders();
     void DFP_set_eq(int eq);
     int DFP_get_eq();
     int DFP_get_playing();
+    int DFP_get_folder_playing(int folder);
     void DFP_set_storage(uint8_t storage);
     void DFP_pause();
     void DFP_unpause();
@@ -146,10 +152,8 @@ const char *storageName[DFPLAYER_MAX_STORAGES];
     void DFP_stop_ad();
 
     // Folders/Tracks
-    int DFP_get_folders();
     int DFP_get_tracks();
     int DFP_get_tracks(int folder);
-    int DFP_get_playing();
     */
 
 //------------------------------------------------------------------------------------------
