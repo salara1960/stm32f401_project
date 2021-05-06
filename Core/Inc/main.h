@@ -79,7 +79,15 @@ typedef enum {
 	msg_250ms,
 	msg_sec,
 	msg_kbd,
+	msg_showFolder,
+	msg_getAllTracks,
+	msg_getAllFolders,
 	msg_folders,
+	msg_newDir,
+	msg_newDirSel,
+	msg_ukDirSel,
+	msg_tail,
+	msg_chkMode,
 	msg_play,
 	msg_rplay,
 	msg_stop,
@@ -173,6 +181,7 @@ uint8_t Report(const char *tag, bool addTime, const char *fmt, ...);
 #define W25_CS_GPIO_Port SPI1_NSS_GPIO_Port
 #define W25_CS_Pin SPI1_NSS_Pin
 
+
 #ifdef SET_KBD
 	I2C_HandleTypeDef *portKBD;
 	int16_t kbdAddr;
@@ -185,6 +194,15 @@ uint8_t Report(const char *tag, bool addTime, const char *fmt, ...);
 #endif
 
 #ifdef SET_DFPLAYER
+
+#pragma pack(push,1)
+typedef struct {
+	int number;//number of folder
+	int tracks;//total tracks in folder
+} folder_t;
+#pragma pack(pop)
+
+	folder_t *all_folder;
 	UART_HandleTypeDef *portDFP;
 	uint8_t dfpCmd;
 	uint8_t dfpRdy;

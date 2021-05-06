@@ -74,7 +74,8 @@ DMA_HandleTypeDef hdma_usart6_tx;
 //const char *version = "0.6 (01.05.2021)";// add DFPlayer and connect to ARM via USART6(9600 8N1)
 //const char *version = "0.7 (02.05.2021)";// add library for DFPlayer
 //const char *version = "0.8 (03.05.2021)";// major changes for DFPlayer support (add recv. in interrupt mode)
-const char *version = "0.9 (05.05.2021)";//add support folders on storage
+//const char *version = "0.9 (05.05.2021)";//add support folders on storage
+const char *version = "1.0 (06.05.2021)";
 
 
 static evt_t evt_fifo[MAX_FIFO_SIZE] = {msg_empty};
@@ -86,7 +87,7 @@ uint8_t max_evt = 0;
 UART_HandleTypeDef *portLOG = &huart1;
 
 //1620036392;//1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
-volatile time_t epoch = 1620246336;//1620214632;//1620063356;
+volatile time_t epoch = 1620329368;//1620246336;//1620214632;//1620063356;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -143,7 +144,16 @@ bool kbdEnable = false;
 	uint16_t dfp_track = 0;//track number on storage
 	uint16_t dfp_folder_tracks = 0;//total tracks in folder
 	uint16_t dfp_folder_trk = 0;//track number in folder
+	uint16_t dfp_all_tracks = 0;
 	bool dfp_pause = false;
+	//
+	folder_t *all_folder = NULL;
+	//
+	bool newDir = false;
+	uint32_t tmr_newDir = 0;
+	int8_t uk_newDir = 0;
+	bool inv_newDir = false;
+
 #endif
 
 /* USER CODE END PV */
@@ -341,12 +351,16 @@ int main(void)
     	dfp_volume = DFPLAYER_MAX_VOLUME >> 1;
     	DFP_set_volume(dfp_volume);
     	// for folder
-    	dfp_folder = 0;
+    	dfp_folder = 1;
     	dfp_folder_tracks = 1;
     	dfp_folder_trk = 1;
     	//for storage
     	dfp_track = 1;
     }
+    int8_t curFolder = dfp_folder;
+    uint32_t tmr_get_trk = 0;
+    uk_newDir = dfp_folder;
+    char line_folder[32] = {0};
 #endif
 
     bool startOne = true;
@@ -377,7 +391,7 @@ int main(void)
     			evt_t new_evt = msg_none;
     			switch (kbdCode) {
     				case '*':
-    					new_evt = msg_play;
+    					new_evt = msg_play;//msg_chkMode;//msg_play;
     					break;
     				case '0':
     					new_evt = msg_rplay;
@@ -400,7 +414,7 @@ int main(void)
     					new_evt = msg_volDown;
     					break;
     				case '5':
-    					//new_evt = msg_volGet;
+    					new_evt = msg_newDir;//msg_volGet;
     					break;
     				case '4':
     					new_evt = msg_volUp;
@@ -409,24 +423,83 @@ int main(void)
     				case '3':
     					break;
     				case '2':
-    					//new_evt = msg_eqGet;
+    					new_evt = msg_ukDirSel;//msg_eqGet;
     					break;
     				case '1':
     					break;
     			}
     			if (new_evt != msg_none) putMsg(new_evt);
-#endif
     		break;
-#ifdef SET_DFPLAYER
-    		case msg_play:
+    		case msg_newDirSel:
+    			mkLineCenter(line_folder, FONT_WIDTH);
+    			i2c_ssd1306_text_xy(line_folder, 1, 5, inv_newDir);
+    		break;
+    		case msg_newDir:
+    		{
+    			evt_t ev;
+    			if (!newDir) {
+    				uk_newDir = dfp_folder;
+    				if (uk_newDir > 0) {
+    					sprintf(line_folder, "Folder: %u", uk_newDir);
+    				} else {
+    					sprintf(line_folder, "Folder: root");
+    				}
+    				inv_newDir = true;
+    				newDir = true;
+    				tmr_newDir = get_tmr(10);
+    				ev = msg_newDirSel;
+    			} else {
+    				DFP_stop();
+    				dfp_pause = true;
+    				HAL_Delay(50);
+    				//
+    				dfp_folder = uk_newDir;
+    				if (!dfp_folder) {
+    					dfp_track = 1;
+    				} else {
+    					folder_t *fold = all_folder + dfp_folder - 1;
+    					dfp_folder_trk = 1;
+    					dfp_folder_tracks = fold->tracks;
+    				}
+    				newDir = false;
+    				tmr_newDir = 0;
+    				ev = msg_play;
+    			}
+    			putMsg(ev);
+    		}
+    		break;
+    		case msg_ukDirSel:
+    			if (newDir) {
+    				tmr_newDir = get_tmr(10);
+    				uk_newDir++;
+    				inv_newDir = true;
+    				if (uk_newDir > dfp_folders) uk_newDir = 0;
+    				if (uk_newDir > 0) {
+    					sprintf(line_folder, "Folder: %u", uk_newDir);
+    				} else {
+    					sprintf(line_folder, "Folder: root");
+    				}
+    				putMsg(msg_newDirSel);
+    			}
+    		break;
+    		case msg_chkMode:
     			if (!(devError & devDFP)) {
     				if (dfp_folder > 0) {
-    				DFP_play_folder(dfp_folder, dfp_folder_trk, false);
-    				DFP_get_tracks(dfp_folder);
+    					DFP_get_tracks(dfp_folder);
+    				} else {
+    					putMsg(msg_play);
+    				}
+    			}
+    		break;
+    		case msg_play:
+    			if (!(devError & devDFP)) {
+    				putMsg(msg_showFolder);
+    				if (dfp_folder > 0) {
+    					DFP_play_folder(dfp_folder, dfp_folder_trk, false);
     				} else {
     					DFP_play_root(dfp_track, false);
-    					putMsg(msg_track);
     				}
+    				putMsg(msg_track);
     			}
     		break;
     		case msg_rplay:
@@ -452,30 +525,70 @@ int main(void)
     			if (dfp_folder > 0) {
     				if (dfp_folder_trk <= 1) {
     					dfp_folder--;
-    					if (!dfp_folder) dfp_folder = dfp_folders;
-    					dfp_folder_trk = 1;
+    					if (dfp_folder > 0) {
+    						if (!dfp_folder) dfp_folder = dfp_folders;
+    						dfp_folder_trk = 1;
+    						if (all_folder) {
+    							folder_t *fold = all_folder + dfp_folder - 1;
+    							dfp_folder_trk = 1;//fold->tracks;
+    							dfp_folder_tracks = fold->tracks;
+    						}
+    					} else  {
+    						dfp_folder = 0;
+    						dfp_track = 1;
+    					}
     					putMsg(msg_play);
     					break;
     				} else dfp_folder_trk--;
-    			}
-    			//
+    			}/* else if (!dfp_folder) {
+    				if (dfp_track <= 1) {
+    					if (dfp_folders) {
+    						dfp_folder = dfp_folders;
+    						dfp_folder_trk = 1;
+    						if (all_folder) {
+    							folder_t *fold = all_folder + dfp_folder - 1;
+    							dfp_folder_trk = 1;
+    							dfp_folder_tracks = fold->tracks;
+    						}
+    					}
+    				}
+    			}*/
     			DFP_play_previous();
-    			//
     			putMsg(msg_track);
     		break;
     		case msg_fwd:
     			if (dfp_folder > 0) {
     				if (dfp_folder_trk >= dfp_folder_tracks) {
     					dfp_folder++;
-    					if (dfp_folder > dfp_folders) dfp_folder = 1;
-    					dfp_folder_trk = 1;
+    					if (dfp_folder > dfp_folders) dfp_folder = 0;//1;
+    					if (dfp_folder > 0) {
+    						dfp_folder_trk = 1;
+    						if (all_folder) {
+    							folder_t *fold = all_folder + dfp_folder - 1;
+    							dfp_folder_tracks = fold->tracks;
+    						}
+    					} else {
+    						dfp_folder = 0;
+    						dfp_track = 1;
+    					}
     					putMsg(msg_play);
     					break;
     				} else dfp_folder_trk++;
-    			}
-    			//
+    			}/* else if (!dfp_folder) {
+    				//
+    				if (dfp_track >= dfp_all_tracks) {
+    					if (dfp_folders > 0) {
+    						dfp_folder = 1;
+    						dfp_folder_trk = 1;
+    						if (all_folder) {
+    							folder_t *fold = all_folder + dfp_folder - 1;
+    							dfp_folder_tracks = fold->tracks;
+    						}
+    					}
+    				}
+    				//
+    			}*/
     			DFP_play_next();
-    			//
     			putMsg(msg_track);
     		break;
     		case msg_eqSet:
@@ -483,7 +596,7 @@ int main(void)
     			if (eqClass > EQ_Bass) eqClass = EQ_Normal;
     			DFP_set_eq(eqClass);
     			//
-    			sprintf(buf, " Eq: %s ", eqName[eqClass]);
+    			sprintf(buf, "Eq: %s ", eqName[eqClass]);
     			mkLineCenter(buf, FONT_WIDTH);
     			i2c_ssd1306_text_xy(buf, 1, 7, false);
     		break;
@@ -494,7 +607,7 @@ int main(void)
     			DFP_volumeUP();
     			if (dfp_volume < DFPLAYER_MAX_VOLUME) dfp_volume++;
     			//
-    			sprintf(buf, " Volume: %d ", dfp_volume);
+    			sprintf(buf, "Volume: %d ", dfp_volume);
     			mkLineCenter(buf, FONT_WIDTH);
     			i2c_ssd1306_text_xy(buf, 1, 6, false);
     		break;
@@ -502,7 +615,7 @@ int main(void)
     			DFP_volumeDOWN();
     			if (dfp_volume > 0) dfp_volume--;
     			//
-    			sprintf(buf, " Volume: %d ", dfp_volume);
+    			sprintf(buf, "Volume: %d ", dfp_volume);
     			mkLineCenter(buf, FONT_WIDTH);
     			i2c_ssd1306_text_xy(buf, 1, 6, false);
     		break;
@@ -510,13 +623,39 @@ int main(void)
     			DFP_get_volume();
     		break;
     		case msg_track:
-    			if (dfp_folder <= 0)
-    				DFP_get_playing();
-    			else
-    				DFP_get_folder_playing(dfp_folder);
+    			if (!tmr_get_trk) tmr_get_trk = get_tmr10(_500ms);
     		break;
     		case msg_folders:
     			DFP_get_folders();
+    		break;
+    		case msg_getAllFolders:
+    			if ((curFolder > 0) && (curFolder <= dfp_folders)) {
+    				DFP_get_tracks(curFolder);
+    			} else {
+    				dfp_folder = all_folder->number;
+					dfp_folder_tracks = all_folder->tracks;
+					dfp_folder_trk = 1;
+
+    				putMsg(msg_tail);
+    			}
+    		break;
+    		case msg_tail:
+    			if (!(devError & devDFP)) {
+    				DFP_set_storage(idDev);//if (idDev) putMsg(msg_playDev);
+    				if (startOne) putMsg(msg_volGet);
+    			}
+    		break;
+    		case msg_showFolder:
+    			if (dfp_folder > 0) {
+    				sprintf(line_folder, "Folder: %u.%u", dfp_folder, dfp_folder_tracks);
+    			} else {
+    				sprintf(line_folder, "Folder: root");
+    			}
+    			mkLineCenter(line_folder, FONT_WIDTH);
+    			i2c_ssd1306_text_xy(line_folder, 1, 5, false);
+    		break;
+    		case msg_getAllTracks:
+    			DFP_get_track();
     		break;
     		case msg_dfpRX:
     		{
@@ -530,6 +669,13 @@ int main(void)
     			bool ys = false;
     			bool inv = false;
     			switch (dfpCmd) {
+    				case DFPLAYER_QUERY_SD_FILES:
+    					dfp_all_tracks = ack->par2;
+    					lnum = 3;
+    					sprintf(buf, "Total trk: %u ", dfp_all_tracks);
+    					ys = true;
+    					//
+    				break;
     				case DFPLAYER_QUERY_STORAGE_DEV:
     					lnum = 4;
     					idDev = ack->par2;
@@ -542,31 +688,53 @@ int main(void)
     				break;
     				case DFPLAYER_QUERY_FOLDER_FILES:
     					dfp_folder_tracks = ack->par2;
-    					sprintf(buf, "Folder: %u.%u", dfp_folder, dfp_folder_tracks);
+    					sprintf(line_folder, "Folder: %u.%u", curFolder, dfp_folder_tracks);
     					lnum = 5;
     					ys = true;
+    					if (all_folder && (dfp_folders > 0)) {
+    						folder_t *fold = all_folder + curFolder - 1;
+    						fold->number = curFolder;
+    						fold->tracks = dfp_folder_tracks;
+    						//
+#ifdef DFP_DUBUG
+    						Report(NULL, true, "Folder %d with %d tracks\n", fold->number, fold->tracks);
+#endif
+    					}
     					//
-    					putMsg(msg_track);
+    					curFolder++;
+    					putMsg(msg_getAllFolders);//msg_play);//msg_track);
 					break;
     				case DFPLAYER_QUERY_FOLDERS:
     					dfp_folders = ack->par2;
-    					sprintf(buf, "Folders: %u ", dfp_folders);
+    					sprintf(line_folder, "Folders: %u ", dfp_folders);
     					lnum = 5;
     					ys = true;
     					//
-    					if (!(devError & devDFP)) {
-    						DFP_set_storage(idDev);//if (idDev) putMsg(msg_playDev);
-    						if (startOne) putMsg(msg_volGet);
+#ifdef DFP_DUBUG
+    					Report(NULL, true, "Total Folders : %d + root\n", dfp_folders);
+#endif
+    					if (dfp_folders > 0) {
+    						if (!all_folder) {
+    							all_folder = (folder_t *)calloc(dfp_folders, sizeof(folder_t));
+    							if (all_folder) {
+    								devError &= ~devMem;
+    								putMsg(msg_getAllFolders);
+    							} else {
+    								devError |= devMem;
+    							}
+    						}
+    					} else {
+    						putMsg(msg_tail);
     					}
     				break;
     				case DFPLAYER_QUERY_TRACK_END:
     				case DFPLAYER_QUERY_UTRACK_END:
-    					if (!dfp_tmr_next) dfp_tmr_next = get_tmr(2); //putMsg(msg_fwd);//goto play next track
+    					if (!dfp_tmr_next) dfp_tmr_next = get_tmr10(_2s); //putMsg(msg_fwd);//goto play next track
     				break;
     				case DFPLAYER_QUERY_VOLUME:
     					lnum = 6;
     					dfp_volume = ack->par2;
-    					sprintf(buf, " Volume: %d ", dfp_volume);
+    					sprintf(buf, "Volume: %d ", dfp_volume);
     					ys = true;
     					if (startOne) {
     						putMsg(msg_eqGet);
@@ -576,17 +744,18 @@ int main(void)
     				case DFPLAYER_QUERY_EQ:
     					lnum = 7;
     					eqClass = ack->par2;
-    					sprintf(buf, " Eq: %s ", eqName[eqClass]);
+    					sprintf(buf, "Eq: %s ", eqName[eqClass]);
     					ys = true;
+    					putMsg(msg_getAllTracks);
     				break;
     				case DFPLAYER_QUERY_SD_TRACK:
     					lnum = 8;
     					inv = true;
     					dfp_track = ((ack->par1 << 8) | ack->par2);// & 0xfff;
     					if (dfp_folder > 0)
-    						sprintf(buf, "Track: %d.%d ", dfp_folder, dfp_track);
+    						sprintf(buf, "Trk: %d.%d.%d ", dfp_folder, dfp_track, dfp_folder_trk);
     					else
-    						sprintf(buf, "Track:  .%d ", dfp_track);
+    						sprintf(buf, "Trk:  .%d ", dfp_track);
     					ys = true;
     				break;
     				case DFPLAYER_QUERY_ERROR:// Returned data of errors
@@ -601,8 +770,10 @@ int main(void)
     				break;
     			}
     			if (ys) {
-    				mkLineCenter(buf, FONT_WIDTH);
-    				i2c_ssd1306_text_xy(buf, 1, lnum, inv);
+    				char *uki = buf;
+    				if (lnum == 5) uki = line_folder;
+    				mkLineCenter(uki, FONT_WIDTH);
+    				i2c_ssd1306_text_xy(uki, 1, lnum, inv);
     			}
     		}
     		break;
@@ -630,19 +801,45 @@ int main(void)
     	}
 
     	if (dfp_tmr_next) {
-    		if (check_tmr(dfp_tmr_next)) {
+    		if (check_tmr10(dfp_tmr_next)) {
     			dfp_tmr_next = 0;
     			putMsg(msg_fwd);//goto play next track
     		}
     	}
 
+    	if (tmr_get_trk) {
+    		if (check_tmr10(tmr_get_trk)) {
+    			tmr_get_trk = 0;
+    			if (!(devError & devDFP)) {
+    				if (dfp_folder <= 0) DFP_get_playing();
+    								else DFP_get_folder_playing(dfp_folder);
+    			}
+    		}
+    	}
+
+    	if (tmr_newDir) {
+    		if (check_tmr(tmr_newDir)) {
+    			if (dfp_folder > 0) {
+    				sprintf(line_folder, "Folder: %u", dfp_folder);
+    			} else {
+    				sprintf(line_folder, "Folder: root");
+    			}
+    			inv_newDir = false;
+    			newDir = false;
+    			tmr_newDir = 0;
+    			putMsg(msg_newDirSel);
+    		}
+    	}
+
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
     }
-
+#ifdef DFP_DUBUG
     HAL_Delay(200);
     Report(NULL, true, "Restart...\n");
+#endif
     HAL_Delay(800);
     NVIC_SystemReset();
 

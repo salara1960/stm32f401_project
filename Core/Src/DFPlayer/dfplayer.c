@@ -15,6 +15,7 @@
 
 //******************************************************************************************
 
+uint8_t dfp_withACK = 0;
 uint8_t dfp_withDMA = 1;
 uint32_t dfp_wait = 1000;
 const char *eqName[DFPLAYER_MAX_EQ] = {"Normal", "Pop", "Rock", "Jazz", "Classic", "Bass"};
@@ -129,6 +130,7 @@ void send_cmd(uint8_t command, uint8_t param1, uint8_t param2)
 		.crc = 0,// (st + ml) bytes		0,//(uint8_t)(checksum >> 8), 0,//(uint8_t)(checksum & 0xFF),
 		.end = DFPLAYER_END_BYTE
 	};
+	if (dfp_withACK) cmd.ack = DFPLAYER_ACK_BYTE;
 	cmd.crc = htons(DFP_CRC_cmd((uint8_t *)&cmd.ver, DFPLAYER_CMD_LEN_BYTE));
 	uint8_t *uk = (uint8_t *)&cmd.start;
 

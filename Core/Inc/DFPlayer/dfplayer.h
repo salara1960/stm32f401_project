@@ -114,6 +114,7 @@ typedef struct {
 
 //------------------------------------------------------------------------------------------
 
+uint8_t dfp_withACK;
 uint8_t dfp_withDMA;
 const char *eqName[DFPLAYER_MAX_EQ];
 const char *storageName[DFPLAYER_MAX_STORAGES];
