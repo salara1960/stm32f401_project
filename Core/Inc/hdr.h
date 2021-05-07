@@ -18,6 +18,7 @@
 	#define DFP_DUBUG
 #endif
 
+#define SET_IRED
 
 
 

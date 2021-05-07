@@ -55,6 +55,9 @@ extern "C" {
 #ifdef SET_DFPLAYER
 	#include "dfplayer.h"
 #endif
+#ifdef SET_IRED
+	#include "IRremote.h"
+#endif
 
 
 /* USER CODE END Includes */
@@ -169,6 +172,8 @@ uint8_t Report(const char *tag, bool addTime, const char *fmt, ...);
 #define KBD_INT_EXTI_IRQn EXTI1_IRQn
 #define SPI1_NSS_Pin GPIO_PIN_4
 #define SPI1_NSS_GPIO_Port GPIOA
+#define IRED_Pin GPIO_PIN_2
+#define IRED_GPIO_Port GPIOB
 #define LED_ERROR_Pin GPIO_PIN_12
 #define LED_ERROR_GPIO_Port GPIOB
 #define LED_Pin GPIO_PIN_4
@@ -209,6 +214,43 @@ typedef struct {
 #endif
 
 uint8_t devError;
+
+#ifdef SET_IRED
+
+	#define MAX_IRED_KEY 21
+
+	enum {
+		key_ch_minus = 0,
+		key_ch,
+		key_ch_plus,
+		key_left,
+		key_right,
+		key_sp,
+		key_minus,
+		key_plus,
+		key_eq,
+		key_100,
+		key_200,
+		key_0,
+		key_1,
+		key_2,
+		key_3,
+		key_4,
+		key_5,
+		key_6,
+		key_7,
+		key_8,
+		key_9
+	};
+
+	typedef struct {
+		char name[8];
+		uint32_t code;
+	} one_key_t;
+
+	TIM_HandleTypeDef *portIRED;//htim3; // таймер для приёма
+
+#endif
 
 /* USER CODE END Private defines */
 

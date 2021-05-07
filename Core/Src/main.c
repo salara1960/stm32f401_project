@@ -56,6 +56,7 @@ SPI_HandleTypeDef hspi1;
 DMA_HandleTypeDef hdma_spi1_tx;
 DMA_HandleTypeDef hdma_spi1_rx;
 
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
@@ -75,7 +76,8 @@ DMA_HandleTypeDef hdma_usart6_tx;
 //const char *version = "0.7 (02.05.2021)";// add library for DFPlayer
 //const char *version = "0.8 (03.05.2021)";// major changes for DFPlayer support (add recv. in interrupt mode)
 //const char *version = "0.9 (05.05.2021)";//add support folders on storage
-const char *version = "1.0 (06.05.2021)";
+//const char *version = "1.0 (06.05.2021)";
+const char *version = "1.1 (07.05.2021)";// add infrared control module (TL1838)
 
 
 static evt_t evt_fifo[MAX_FIFO_SIZE] = {msg_empty};
@@ -87,7 +89,7 @@ uint8_t max_evt = 0;
 UART_HandleTypeDef *portLOG = &huart1;
 
 //1620036392;//1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
-volatile time_t epoch = 1620329368;//1620246336;//1620214632;//1620063356;
+volatile time_t epoch = 1620406195;//1620329368;//1620246336;//1620214632;//1620063356;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -106,6 +108,7 @@ char stx[128] = {0};
 
 I2C_HandleTypeDef *portOLED = &hi2c2;
 char buf[128] = {0};
+uint8_t screenON = 0;
 
 SPI_HandleTypeDef *portFLASH = &hspi1;
 uint32_t spi_cnt = 0;
@@ -156,6 +159,36 @@ bool kbdEnable = false;
 
 #endif
 
+#ifdef SET_IRED
+
+	const one_key_t keyAll[MAX_IRED_KEY] = {
+			{"irCH-",   0xe318261b},
+			{"irCH",    0x00511dbb},
+			{"irCH+",   0xee886d7f},
+			{"irLEFT",  0x52a3d41f},
+			{"irRIGHT", 0xd7e84b1b},
+			{"irSP",    0x20fe4dbb},
+			{"ir-",     0xf076c13b},
+			{"ir+",     0xa3c8eddb},
+			{"irEQ",    0xe5cfbd7f},
+			{"ir100+",  0x97483bfb},
+			{"ir200+",  0xf0c41643},
+			{"ir0",     0xc101e57b},
+			{"ir1",     0x9716be3f},
+			{"ir2",     0x3d9ae3f7},
+			{"ir3",     0x6182021b},
+			{"ir4",     0x8c22657b},
+			{"ir5",     0x488f3cbb},
+			{"ir6",     0x0449e79f},
+			{"ir7",     0x32c6fdf7},
+			{"ir8",     0x1bc0157b},
+			{"ir9",     0x3ec3fc1b}
+	};
+
+	TIM_HandleTypeDef *portIRED = &htim3; // таймер для приёма
+
+#endif
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -169,6 +202,7 @@ static void MX_I2C2_Init(void);
 static void MX_RTC_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART6_UART_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 uint32_t get_tmr10(uint32_t ms);
@@ -292,6 +326,7 @@ int main(void)
   MX_RTC_Init();
   MX_TIM3_Init();
   MX_USART6_UART_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
   	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
@@ -309,9 +344,13 @@ int main(void)
 
     // start timer3 in interrupt mode
     HAL_TIM_Base_Start_IT(&htim3);
+    // start timer2 for IRED control
+    HAL_TIM_Base_Start_IT(&htim2);
 
 
     oled_withDMA = 1;
+
+    screenON = 1;
 
     i2c_ssd1306_init();//screen INIT
     i2c_ssd1306_pattern();//set any params for screen
@@ -363,6 +402,14 @@ int main(void)
     char line_folder[32] = {0};
 #endif
 
+
+#ifdef SET_IRED
+    char stline[32] = {0};
+	uint32_t tmr_ired = 0;
+	enIntIRED();
+#endif
+
+
     bool startOne = true;
     evt_t evt = msg_none;
     uint32_t last_sec = (uint32_t)epoch;
@@ -376,6 +423,90 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 
     while (!restart_flag) {
+
+#ifdef SET_IRED
+  		if (!tmr_ired) {
+			if (decodeIRED(&results)) {
+
+				tmr_ired = get_tmr10(_300ms);
+				//HAL_GPIO_TogglePin(ENC_LED_GPIO_Port, ENC_LED_Pin);
+				int8_t kid = -1;
+				for (int8_t i = 0; i < MAX_IRED_KEY; i++) {
+					if (results.value == keyAll[i].code) {
+						kid = i;
+						break;
+					}
+				}
+				//
+				if (kid == -1) sprintf(stline, "CODE:%08lX", results.value);
+						  else sprintf(stline, "irKEY: %s", keyAll[kid].name);
+				mkLineCenter(stline, FONT_WIDTH);
+				i2c_ssd1306_text_xy(stline, 1, 3, false);
+				//
+				//uint8_t ys = 0;
+				evt_t eve = msg_none;
+				if (kid != -1) {
+					switch (kid) {
+						case key_ch:
+							restart_flag = 1;
+						break;
+						case key_ch_plus:
+							eve = msg_ukDirSel;//msg_eqGet;
+						break;
+						case key_ch_minus:
+							eve = msg_newDir;//msg_volGet;
+						break;
+						case key_minus:
+							eve = msg_volDown;
+						break;
+						case key_plus:
+							eve = msg_volUp;
+						break;
+						case key_left:
+							eve = msg_back;
+						break;
+						case key_right:
+							eve = msg_fwd;
+						break;
+						case key_eq:
+							eve = msg_rplay;
+						break;
+						case key_sp:
+							eve = msg_play;
+						break;
+						case key_100:
+							screenON++;
+							screenON &= 1;
+							i2c_ssd1306_on(screenON);
+						break;
+						case key_200:
+							//
+						break;
+						case key_0:
+						case key_1:
+						case key_2:
+						case key_3:
+						case key_4:
+						case key_5:
+						case key_6:
+						case key_7:
+						case key_8:
+						case key_9:
+						break;
+					}//switch (kid)
+					if (eve != msg_none) putMsg(eve);
+				}//if (kid != -1)
+			}//if (decodeIRED(&results))
+		}
+		if (tmr_ired) {
+			if (check_tmr10(tmr_ired)) {
+				tmr_ired = 0;
+				resumeIRED();
+			}
+		}
+#endif
+
+		if (restart_flag) break;
 
     	evt = getMsg();
     	switch ((int)evt) {
@@ -671,8 +802,9 @@ int main(void)
     			switch (dfpCmd) {
     				case DFPLAYER_QUERY_SD_FILES:
     					dfp_all_tracks = ack->par2;
-    					lnum = 3;
-    					sprintf(buf, "Total trk: %u ", dfp_all_tracks);
+    					lnum = 4;
+    					//sprintf(buf, "Total trk: %u ", dfp_all_tracks);
+    					sprintf(buf, "Storage: %s %u", storageName[idDev], dfp_all_tracks);
     					ys = true;
     					//
     				break;
@@ -1066,6 +1198,51 @@ static void MX_SPI1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 83;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 49;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
   * @brief TIM3 Initialization Function
   * @param None
   * @retval None
@@ -1241,6 +1418,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(SPI1_NSS_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : IRED_Pin */
+  GPIO_InitStruct.Pin = IRED_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(IRED_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LED_ERROR_Pin */
   GPIO_InitStruct.Pin = LED_ERROR_Pin;
@@ -1536,10 +1719,66 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		if (!(HalfSecCounter % _1s)) {//seconda
 			secCounter++;
 			//HalfSecCounter = 0;
-			HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);//set ON/OFF LED
+			//HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);//set ON/OFF LED
+
+			if (screenON) {
+				HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);//set ON/OFF LED1
+			} else {
+				if (HAL_GPIO_ReadPin(LED_GPIO_Port, LED_Pin) == GPIO_PIN_SET)
+					HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+			}
+
 			putMsg(msg_sec);
 		}
 	}
+#ifdef SET_IRED
+	else if (htim->Instance == TIM2) {
+		uint8_t irdata = RECIV_PIN; // пин для приёма
+		irparams.timer++;  // One more 50uS tick
+		if (irparams.rawlen >= RAWBUF) irparams.rcvstate = STATE_OVERFLOW;  // Buffer overflow
+
+		switch (irparams.rcvstate) {
+			case STATE_IDLE: // In the middle of a gap
+				if (irdata == MARK) {
+					if (irparams.timer < GAP_TICKS) { // Not big enough to be a gap.
+						irparams.timer = 0;
+					} else {
+						// Gap just ended; Record duration; Start recording transmission
+						irparams.overflow = 0;
+						irparams.rawlen  = 0;
+						irparams.rawbuf[irparams.rawlen++] = irparams.timer;
+						irparams.timer = 0;
+						irparams.rcvstate = STATE_MARK;
+					}
+				}
+			break;
+			case STATE_MARK:  // Timing Mark
+				if (irdata == SPACE) {// Mark ended; Record time
+					irparams.rawbuf[irparams.rawlen++] = irparams.timer;
+					irparams.timer = 0;
+					irparams.rcvstate = STATE_SPACE;
+				}
+			break;
+			case STATE_SPACE:  // Timing Space
+				if (irdata == MARK) {// Space just ended; Record time
+					irparams.rawbuf[irparams.rawlen++] = irparams.timer;
+					irparams.timer = 0;
+					irparams.rcvstate = STATE_MARK;
+				} else if (irparams.timer > GAP_TICKS) {// Space
+					irparams.rcvstate = STATE_STOP;
+				}
+			break;
+			case STATE_STOP:  // Waiting; Measuring Gap
+			 	if (irdata == MARK) irparams.timer = 0;  // Reset gap timer
+			break;
+			case STATE_OVERFLOW:  // Flag up a read overflow; Stop the State Machine
+				irparams.overflow = 1;
+				irparams.rcvstate = STATE_STOP;
+			break;
+		}
+		//
+	}
+#endif
 
 }
 //-------------------------------------------------------------------------------------------
