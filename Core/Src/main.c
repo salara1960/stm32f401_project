@@ -60,9 +60,11 @@ TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart6;
 DMA_HandleTypeDef hdma_usart1_tx;
 DMA_HandleTypeDef hdma_usart1_rx;
+DMA_HandleTypeDef hdma_usart2_tx;
 DMA_HandleTypeDef hdma_usart6_tx;
 
 /* USER CODE BEGIN PV */
@@ -77,7 +79,8 @@ DMA_HandleTypeDef hdma_usart6_tx;
 //const char *version = "0.8 (03.05.2021)";// major changes for DFPlayer support (add recv. in interrupt mode)
 //const char *version = "0.9 (05.05.2021)";//add support folders on storage
 //const char *version = "1.0 (06.05.2021)";
-const char *version = "1.1 (07.05.2021)";// add infrared control module (TL1838)
+//const char *version = "1.1 (07.05.2021)";// add infrared control module (TL1838)
+const char *version = "1.2 (08.05.2021)";// add BLE audio module (uart) - first step (host version - listen client)
 
 
 static evt_t evt_fifo[MAX_FIFO_SIZE] = {msg_empty};
@@ -89,7 +92,7 @@ uint8_t max_evt = 0;
 UART_HandleTypeDef *portLOG = &huart1;
 
 //1620036392;//1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
-volatile time_t epoch = 1620406195;//1620329368;//1620246336;//1620214632;//1620063356;
+volatile time_t epoch = 1620467295;//1620406195;//1620329368;//1620246336;//1620214632;//1620063356;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -189,6 +192,10 @@ bool kbdEnable = false;
 
 #endif
 
+#ifdef SET_BLE
+	UART_HandleTypeDef *portBLE = &huart2;
+#endif
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -203,6 +210,7 @@ static void MX_RTC_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART6_UART_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 uint32_t get_tmr10(uint32_t ms);
@@ -327,6 +335,7 @@ int main(void)
   MX_TIM3_Init();
   MX_USART6_UART_Init();
   MX_TIM2_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
   	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
@@ -480,7 +489,7 @@ int main(void)
 							i2c_ssd1306_on(screenON);
 						break;
 						case key_200:
-							//
+							eve = msg_eqSet;
 						break;
 						case key_0:
 						case key_1:
@@ -637,12 +646,19 @@ int main(void)
     			if (!dfp_pause) {
     				dfp_pause = true;
     				DFP_pause();
+    				//
+    				sprintf(buf, " Pause ");
+    				mkLineCenter(buf, FONT_WIDTH);
+    				i2c_ssd1306_text_xy(buf, 1, 8, true);
+    				//i2c_ssd1306_shift(8, OLED_CMD_SHIFT_START);
+    				//
     			} else {
     				dfp_pause = false;
     				DFP_unpause();
+    				//
+    				//i2c_ssd1306_shift(8, OLED_CMD_SHIFT_STOP);
+    				tmr_get_trk = get_tmr10(_10ms);
     			}
-    			//
-    			putMsg(msg_track);
     		break;
     		case msg_stop:
     			DFP_stop();
@@ -1321,6 +1337,39 @@ static void MX_USART1_UART_Init(void)
 }
 
 /**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
   * @brief USART6 Initialization Function
   * @param None
   * @retval None
@@ -1364,6 +1413,9 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA1_Stream6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 3, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
   /* DMA1_Stream7_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream7_IRQn, 2, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream7_IRQn);
