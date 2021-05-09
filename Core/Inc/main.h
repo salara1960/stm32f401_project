@@ -103,6 +103,7 @@ typedef enum {
 	msg_eqSet,
 	msg_eqGet,
 	msg_dfpRX,
+	msg_bleRx,
 	msg_none
 } evt_t;
 
@@ -243,14 +244,35 @@ uint8_t devError;
 		key_9
 	};
 
+	#pragma pack(push,1)
 	typedef struct {
 		char name[8];
 		uint32_t code;
 	} one_key_t;
+	#pragma pack(pop)
 
 	TIM_HandleTypeDef *portIRED;//htim3; // таймер для приёма
 
 #endif
+
+
+#ifdef SET_BLE
+	#define MAX_BLE_BUF 255
+
+	#pragma pack(push,1)
+	typedef struct {
+		uint8_t con;
+		char name[16];
+	} ble_client_t;
+	#pragma pack(pop)
+
+	UART_HandleTypeDef *portBLE;
+//	static char ble_RxBuf[255];
+//	volatile uint8_t ble_rx_uk;
+//	volatile uint8_t ble_uRxByte = 0;
+//	static char BleBuf[255];
+#endif
+
 
 /* USER CODE END Private defines */
 

@@ -80,7 +80,9 @@ DMA_HandleTypeDef hdma_usart6_tx;
 //const char *version = "0.9 (05.05.2021)";//add support folders on storage
 //const char *version = "1.0 (06.05.2021)";
 //const char *version = "1.1 (07.05.2021)";// add infrared control module (TL1838)
-const char *version = "1.2 (08.05.2021)";// add BLE audio module (uart) - first step (host version - listen client)
+//const char *version = "1.2 (08.05.2021)";// add BLE audio module (uart) - first step (host version - listen client)
+const char *version = "1.3 (09.05.2021)";// minor changes for BLE audio module support - second step
+
 
 
 static evt_t evt_fifo[MAX_FIFO_SIZE] = {msg_empty};
@@ -92,7 +94,7 @@ uint8_t max_evt = 0;
 UART_HandleTypeDef *portLOG = &huart1;
 
 //1620036392;//1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
-volatile time_t epoch = 1620467295;//1620406195;//1620329368;//1620246336;//1620214632;//1620063356;
+volatile time_t epoch = 1620557655;//1620467295;//1620406195;//1620329368;//1620246336;//1620214632;//1620063356;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -193,7 +195,14 @@ bool kbdEnable = false;
 #endif
 
 #ifdef SET_BLE
+	const char *TAG_BLE = "BLE";
 	UART_HandleTypeDef *portBLE = &huart2;
+	static char ble_RxBuf[MAX_BLE_BUF];
+	volatile uint8_t ble_rx_uk;
+	volatile uint8_t ble_uRxByte = 0;
+	static char BleBuf[MAX_BLE_BUF];
+	ble_client_t ble_client;
+	char ble_str[32];
 #endif
 
 /* USER CODE END PV */
@@ -237,9 +246,13 @@ void putMsg(evt_t evt)
 
 	HAL_NVIC_DisableIRQ(EXTI1_IRQn);
 	HAL_NVIC_DisableIRQ(TIM3_IRQn);
-//	HAL_NVIC_DisableIRQ(USART1_IRQn);
+#ifdef SET_DFPLAYER
 	HAL_NVIC_DisableIRQ(USART6_IRQn);
-//	HAL_NVIC_DisableIRQ(SPI1_IRQn);
+#endif
+#ifdef SET_BLE
+	HAL_NVIC_DisableIRQ(USART2_IRQn);
+#endif
+
 
 	if (cnt_evt >= MAX_FIFO_SIZE) {
 		wr_evt_err++;
@@ -258,9 +271,12 @@ void putMsg(evt_t evt)
 	if (wr_evt_err) devError |= devFifo;
 		       else devError &= ~devFifo;
 
-//	HAL_NVIC_EnableIRQ(SPI1_IRQn);
+#ifdef SET_BLE
+	HAL_NVIC_EnableIRQ(USART2_IRQn);
+#endif
+#ifdef SET_DFPLAYER
 	HAL_NVIC_EnableIRQ(USART6_IRQn);
-//	HAL_NVIC_EnableIRQ(USART1_IRQn);
+#endif
 	HAL_NVIC_EnableIRQ(TIM3_IRQn);
 	HAL_NVIC_EnableIRQ(EXTI1_IRQn);
 
@@ -272,9 +288,13 @@ evt_t ret = msg_empty;
 
 	HAL_NVIC_DisableIRQ(EXTI1_IRQn);
 	HAL_NVIC_DisableIRQ(TIM3_IRQn);
-//	HAL_NVIC_DisableIRQ(USART1_IRQn);
+#ifdef SET_DFPLAYER
 	HAL_NVIC_DisableIRQ(USART6_IRQn);
-//	HAL_NVIC_DisableIRQ(SPI1_IRQn);
+#endif
+#ifdef SET_BLE
+	HAL_NVIC_DisableIRQ(USART2_IRQn);
+#endif
+
 
 	if (cnt_evt) {
 		ret = evt_fifo[rd_evt_adr];
@@ -286,9 +306,12 @@ evt_t ret = msg_empty;
 		}
 	}
 
-//	HAL_NVIC_EnableIRQ(SPI1_IRQn);
+#ifdef SET_BLE
+	HAL_NVIC_EnableIRQ(USART2_IRQn);
+#endif
+#ifdef SET_DFPLAYER
 	HAL_NVIC_EnableIRQ(USART6_IRQn);
-//	HAL_NVIC_EnableIRQ(USART1_IRQn);
+#endif
 	HAL_NVIC_EnableIRQ(TIM3_IRQn);
 	HAL_NVIC_EnableIRQ(EXTI1_IRQn);
 
@@ -349,6 +372,9 @@ int main(void)
     HAL_UART_Receive_IT(portLOG, (uint8_t *)&uRxByte, 1);
 #ifdef SET_DFPLAYER
     HAL_UART_Receive_IT(portDFP, (uint8_t *)&dfp_uRxByte, 1);
+#endif
+#ifdef SET_BLE
+    HAL_UART_Receive_IT(portBLE, (uint8_t *)&ble_uRxByte, 1);
 #endif
 
     // start timer3 in interrupt mode
@@ -413,11 +439,16 @@ int main(void)
 
 
 #ifdef SET_IRED
+    memset((uint8_t *)&ble_client, 0, sizeof(ble_client_t));
     char stline[32] = {0};
 	uint32_t tmr_ired = 0;
 	enIntIRED();
 #endif
 
+#ifdef SET_BLE
+	strcpy(buf, "ATZ\r\n");
+	HAL_UART_Transmit_DMA(portBLE, (uint8_t *)buf, strlen(buf));
+#endif
 
     bool startOne = true;
     evt_t evt = msg_none;
@@ -926,6 +957,37 @@ int main(void)
     		}
     		break;
 #endif
+#ifdef SET_BLE
+    		case msg_bleRx:
+    			if (strstr(BleBuf, "CONNECTED")) {
+    				ble_client.con = 0x81;
+    				char *uks = strstr(BleBuf, "Name");
+    				if (uks) {//Name:Sabbat X12 Pro
+    					memset(ble_client.name, 0, sizeof(ble_client.name));
+    					uks += 4;
+    					if ((*uks == '=') || (*uks == ':')) uks++;
+    					int dl = strlen(uks);
+    					char *ukse = strchr(uks, '\n');
+    					if (ukse && dl) dl--;//*uke = '\0';
+    					if (dl > sizeof(ble_client.name) - 1) dl = sizeof(ble_client.name) - 1;
+    					strncpy(ble_client.name, uks, dl);
+    					strcpy(ble_str, ble_client.name);
+    				}
+    			} else if (strstr(BleBuf, "DISCONNECT")) {
+    				ble_client.con = 0x80;
+    				memset(ble_client.name, 0, sizeof(ble_client.name));
+    				strcpy(ble_str, "BLE cli discon.");
+    			} else ble_client.con = 0;
+    			//
+    			if (ble_client.con & 0x80) {// con/discon event !
+    				ble_client.con = 0;
+    				mkLineCenter(ble_str, FONT_WIDTH);
+    				i2c_ssd1306_text_xy(ble_str, 1, 2, false);
+    			}
+    			//
+    			Report(TAG_BLE, true, "%s\n", BleBuf);
+    		break;
+#endif
     		case msg_sec:
     		{
     			uint32_t cur_sec = get_tmr(0);
@@ -933,8 +995,15 @@ int main(void)
     			sec_to_str_time(cur_sec, buf);
     			i2c_ssd1306_text_xy(mkLineCenter(buf, FONT_WIDTH), 1, 1, true);
     			//
-    			sprintf(buf, "Fifo:%u %u Err:%X", cnt_evt, max_evt, devError);
-    			i2c_ssd1306_text_xy(buf, 1, 2, false);
+#ifdef SET_BLE
+    			if (devError) {
+#endif
+    				sprintf(buf, "Fifo:%u %u Err:%X", cnt_evt, max_evt, devError);
+    				i2c_ssd1306_text_xy(buf, 1, 2, false);
+#ifdef SET_BLE
+    			}
+#endif
+
 #endif
     			if (cur_sec >= (uint32_t)epoch) {
     				if (cur_sec == last_sec)
@@ -1352,7 +1421,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
+  huart2.Init.BaudRate = 9600;//115200;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -1739,7 +1808,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		} else rx_uk++;
 
 		HAL_UART_Receive_IT(huart, (uint8_t *)&uRxByte, 1);
-	} else if (huart->Instance == USART6) {
+	}
+#ifdef SET_DFPLAYER
+	else if (huart->Instance == USART6) {
 		if (dfp_uRxByte == DFPLAYER_START_BYTE) dfp_Begin = true;
 		if (dfp_Begin) {
 			dfp_RxBuf[dfp_rx_uk & 0x3f] = dfp_uRxByte;
@@ -1756,6 +1827,27 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 		HAL_UART_Receive_IT(huart, (uint8_t *)&dfp_uRxByte, 1);
 	}
+#endif
+#ifdef SET_BLE
+	else if (huart->Instance == USART2) {
+		if ((ble_uRxByte >= 0x0a) && (ble_uRxByte <= 0x7f)) {
+			ble_RxBuf[ble_rx_uk++] = (char)ble_uRxByte;
+			ble_rx_uk &= 0xff;
+			char *uki = NULL;
+			if ((uki = strstr(ble_RxBuf, "\r\r\n"))) {
+				*uki = '\0';
+				strncpy(BleBuf, ble_RxBuf, strlen(ble_RxBuf));
+
+				putMsg(msg_bleRx);
+
+				ble_rx_uk = 0;
+				memset(ble_RxBuf, 0, sizeof(ble_RxBuf));
+			}
+		}
+
+		HAL_UART_Receive_IT(huart, (uint8_t *)&ble_uRxByte, 1);
+	}
+#endif
 
 }
 //-------------------------------------------------------------------------------------------

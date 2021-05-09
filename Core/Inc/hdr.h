@@ -20,7 +20,7 @@
 
 #define SET_IRED
 
-//#define SET_BLE
+#define SET_BLE
 
 
 
