@@ -1,5 +1,5 @@
 # stm32f401_project
-hardware : stm32f401 + w25q64 + mpr121 + ssd1306 + DFPlayer mini
+hardware : stm32f401 + w25q64 + mpr121 + ssd1306 + DFPlayer mini + audio BLE module
 
 Hardware components :
 
@@ -9,6 +9,7 @@ Hardware components :
 * W25Q64 chip - flash memory 8MB (spi with DMA)
 * MPR121 - Capacitive Touch Keypad (i2c with external IT)
 * DFPlayer mini - mp3/wav player with microSD (uart with DMA & IT)
+* BLE module - audio BLE transmit module in host mode (uart with DMA & IT)
 ```
 
 Software components :

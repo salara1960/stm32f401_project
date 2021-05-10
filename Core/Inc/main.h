@@ -73,7 +73,8 @@ enum {
 	devRTC = 0x10,
 	devMem = 0x20,
 	devDFP = 0x40,
-	devFifo = 0x80
+	devFifo = 0x80,
+	devBLE = 0x100
 };
 
 typedef enum {
@@ -104,6 +105,7 @@ typedef enum {
 	msg_eqGet,
 	msg_dfpRX,
 	msg_bleRx,
+	msg_bleCmd,
 	msg_none
 } evt_t;
 
@@ -263,8 +265,29 @@ uint8_t devError;
 	typedef struct {
 		uint8_t con;
 		char name[16];
+		char mac[15];
 	} ble_client_t;
 	#pragma pack(pop)
+
+	enum {
+		bleERR = -1,
+		bleON,
+		bleRST,
+		bleSCAN,
+		bleRDY,
+		bleCON,
+		bleDISC,
+		bleCONADDR,
+		bleDISCADDR,
+		bleNEW,
+		bleNONE
+	};
+	enum {
+		bleNextTrk = 0x4bcb, // next track //from left
+		blePlay = 0x46c6,    // play
+		blePause = 0x44c4,   // pause
+		bleBackTrk = 0x4ccc  // back track //from right
+	};
 
 	UART_HandleTypeDef *portBLE;
 //	static char ble_RxBuf[255];

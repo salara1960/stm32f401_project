@@ -81,7 +81,8 @@ DMA_HandleTypeDef hdma_usart6_tx;
 //const char *version = "1.0 (06.05.2021)";
 //const char *version = "1.1 (07.05.2021)";// add infrared control module (TL1838)
 //const char *version = "1.2 (08.05.2021)";// add BLE audio module (uart) - first step (host version - listen client)
-const char *version = "1.3 (09.05.2021)";// minor changes for BLE audio module support - second step
+//const char *version = "1.3 (09.05.2021)";// minor changes for BLE audio module support - second step
+const char *version = "1.4 (10.05.2021)";// major changes for BLE audio module : support 'income_opid:' message from ble_client's
 
 
 
@@ -94,7 +95,7 @@ uint8_t max_evt = 0;
 UART_HandleTypeDef *portLOG = &huart1;
 
 //1620036392;//1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
-volatile time_t epoch = 1620557655;//1620467295;//1620406195;//1620329368;//1620246336;//1620214632;//1620063356;
+volatile time_t epoch = 1620673738;//1620557655;//1620467295;//1620406195;//1620329368;//1620246336;//1620214632;//1620063356;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -197,12 +198,19 @@ bool kbdEnable = false;
 #ifdef SET_BLE
 	const char *TAG_BLE = "BLE";
 	UART_HandleTypeDef *portBLE = &huart2;
-	static char ble_RxBuf[MAX_BLE_BUF];
+	static char ble_RxBuf[MAX_BLE_BUF] = {0};
 	volatile uint8_t ble_rx_uk;
 	volatile uint8_t ble_uRxByte = 0;
-	static char BleBuf[MAX_BLE_BUF];
+	static char BleBuf[MAX_BLE_BUF] = {0};
 	ble_client_t ble_client;
-	char ble_str[32];
+	char ble_str[32] = {0};
+	uint8_t ble_withDMA = 1;
+	char bleTmp[MAX_BLE_BUF] = {0};
+	char ble_TxBuf[MAX_BLE_BUF] = {0};
+	int ble_status = bleERR;
+	uint32_t tmr_ble_con = 0;
+	uint16_t ble_CtlCode = 0;
+	uint8_t ble_CtlInd = 0;
 #endif
 
 /* USER CODE END PV */
@@ -319,6 +327,49 @@ evt_t ret = msg_empty;
 }
 //-------------------------------------------------------------------------------------------
 
+//*******************************************************************************************
+#ifdef SET_BLE
+//-------------------------------------------------------------------------------------------
+void bleWrite(char *str, bool prn)
+{
+	if (ble_withDMA) {
+		if (HAL_UART_Transmit_DMA(portBLE, (uint8_t *)str, strlen(str)) != HAL_OK) devError |= devBLE;
+		/*
+		while (HAL_UART_GetState(portBLE) != HAL_UART_STATE_READY) {
+			if (HAL_UART_GetState(portBLE) == HAL_UART_STATE_BUSY_RX) break;
+			//HAL_Delay(1);
+		}
+		*/
+	} else {
+		if (HAL_UART_Transmit(portBLE, (uint8_t *)str, strlen(str), 1000) != HAL_OK) devError |= devBLE;
+	}
+
+	if (prn) Report(TAG_BLE, true, "%s\n", str);
+
+}
+//-------------------------------------------------------------------------------------------
+void parseCtl(uint16_t ccode)
+{
+	evt_t ev = msg_none;
+	switch (ccode) {
+		case bleNextTrk://0x4bcb:// next track
+			ev = msg_fwd;
+		break;
+		case bleBackTrk://0x4ccc:// back track
+			ev = msg_back;
+		break;
+		case blePlay://0x46c6: //play
+		case blePause://0x44c4: //pause
+			ev = msg_rplay;
+		break;
+	}
+
+	if (ev != msg_none) putMsg(ev);
+}
+//-------------------------------------------------------------------------------------------
+#endif
+//*******************************************************************************************
+
 /* USER CODE END 0 */
 
 /**
@@ -393,6 +444,7 @@ int main(void)
     i2c_ssd1306_clear();//clear screen
 
     set_Date((time_t)(++epoch));
+    uint32_t last_sec = (uint32_t)epoch - 2;
 
 #ifdef SET_KBD
     kbdPresent = KBD_getAddr(&kbdAddr);
@@ -446,13 +498,14 @@ int main(void)
 #endif
 
 #ifdef SET_BLE
-	strcpy(buf, "ATZ\r\n");
-	HAL_UART_Transmit_DMA(portBLE, (uint8_t *)buf, strlen(buf));
+	strcpy(ble_TxBuf, "AT+DISCON");//"AT+REST");// MacAddr=0x0000100014a,Name=Sabbat X12 Pro
+	bleWrite(ble_TxBuf, true);
+	char bleTmp[MAX_BLE_BUF] = {0};
 #endif
 
     bool startOne = true;
     evt_t evt = msg_none;
-    uint32_t last_sec = (uint32_t)epoch;
+    //uint32_t last_sec = (uint32_t)epoch;
 
 
 
@@ -958,65 +1011,176 @@ int main(void)
     		break;
 #endif
 #ifdef SET_BLE
-    		case msg_bleRx:
-    			if (strstr(BleBuf, "CONNECTED")) {
-    				ble_client.con = 0x81;
-    				char *uks = strstr(BleBuf, "Name");
-    				if (uks) {//Name:Sabbat X12 Pro
-    					memset(ble_client.name, 0, sizeof(ble_client.name));
-    					uks += 4;
-    					if ((*uks == '=') || (*uks == ':')) uks++;
-    					int dl = strlen(uks);
-    					char *ukse = strchr(uks, '\n');
-    					if (ukse && dl) dl--;//*uke = '\0';
-    					if (dl > sizeof(ble_client.name) - 1) dl = sizeof(ble_client.name) - 1;
-    					strncpy(ble_client.name, uks, dl);
-    					strcpy(ble_str, ble_client.name);
+    		case msg_bleRx:// MacAddr=0x0000100014a,Name=Sabbat X12 Pro //mac=0000100014a name=Sabbat X12 Pro
+    		{
+    			char *uks = NULL, *uke = NULL;
+    			int dl = 0;
+    			strcpy(bleTmp, BleBuf);
+    			evt_t e = msg_none;
+    			//
+    			if ((uks = strstr(bleTmp, "income_opid:"))) {//income_opid:4b // income_opid:cb
+    				uks += 12;
+    				uint8_t val = (uint8_t)strtol(uks, NULL, 16);
+    				if (!ble_CtlInd) {
+    					ble_CtlCode = val;
+    					ble_CtlCode <<= 8;
+    				} else {
+    					ble_CtlCode |= val;
+    					parseCtl(ble_CtlCode);//goto action : play, pause, next/back track
     				}
-    			} else if (strstr(BleBuf, "DISCONNECT")) {
-    				ble_client.con = 0x80;
+    				ble_CtlInd++;
+    				ble_CtlInd &= 1;
+    			} else if (strstr(bleTmp, "OK+")) {
+    				if (ble_status == bleCONADDR) tmr_ble_con = get_tmr(5);
+    			} else if (strstr(bleTmp, "ERR")) {
+    				if (ble_status == bleCONADDR) {
+    					tmr_ble_con = 0;
+    					e = msg_bleCmd;//send rst
+    					ble_status = bleDISCADDR;
+    				}
+    			} else if (strstr(bleTmp, "ALL Devices=0")) {
+    				memset((uint8_t *)&ble_client, 0, sizeof(ble_client_t));
+    			} else if (strstr(bleTmp, "OK+REST")) {
+    				ble_status = bleCON;
+    			} else if (strstr(bleTmp, "POWER ON")) {
+    				e = msg_bleCmd;//send rst
+    				ble_status = bleSCAN;
+    			}/* else if (strstr(bleTmp, "OK+REST")) {
+    				//ble_status = bleRST;
+    			}*/ else if ((uks = strstr(bleTmp, "Name"))) {
+    				uks += 4;
+    				if ((*uks == '=') || (*uks == ':')) uks++;
+    				dl = strlen(uks);
+    				uke = strchr(uks, '\n');
+    				if (uke && dl) dl--;//*uke = '\0';
+    				if (dl > sizeof(ble_client.name) - 1) dl = sizeof(ble_client.name) - 1;
     				memset(ble_client.name, 0, sizeof(ble_client.name));
+    				strncpy(ble_client.name, uks, dl);
+    				if ( (strstr(ble_client.name, "Sabbat")) ||
+    						(strstr(ble_client.name, "S650")) ||
+								(strstr(ble_client.name, "E5")) ) {
+    					if ((uks = strstr(bleTmp, "MacAdd"))) {
+    						uks += 7;
+    						uke = strstr(bleTmp, "0x");
+    						if (uke) {
+    							memset(ble_client.mac, 0, sizeof(ble_client.mac));
+    							uks = uke;
+    							uks += 2;
+    							uke = strchr(uks, ',');
+    							if (uke) {
+    								dl = uke - uks;
+    								if (dl > (sizeof(ble_client.mac) - 1)) dl = sizeof(ble_client.mac) - 1;
+    								ble_client.mac[0] = '0';
+    								if (dl == 11) strncpy(&ble_client.mac[1], uks, dl);
+    								         else strncpy(&ble_client.mac[0], uks, dl);
+    								//
+    								if (!tmr_ble_con && (ble_status != bleCON)) {
+    									ble_status = bleRDY;//send connect
+    									e = msg_bleCmd;
+    								}
+    								//
+    							}
+    						}
+    					}
+    				} else {
+    					memset((uint8_t *)&ble_client, 0, sizeof(ble_client_t));
+    				}
+    			} else if (strstr(bleTmp, "CONNECTED")) {
+    				tmr_ble_con = 0;
+    				ble_client.con = 0x81;
+    				strcpy(ble_str, ble_client.name);
+    				ble_status = bleCON;
+    			} else if (strstr(bleTmp, "DISCONNECT")) {
+    				memset((uint8_t *)&ble_client, 0, sizeof(ble_client_t));
+    				ble_client.con = 0x80;
     				strcpy(ble_str, "BLE cli discon.");
+    				ble_status = bleSCAN;//send scan
+    				e = msg_bleCmd;
     			} else ble_client.con = 0;
+    			//
+    			if (e != msg_none) putMsg(e);
     			//
     			if (ble_client.con & 0x80) {// con/discon event !
     				ble_client.con = 0;
     				mkLineCenter(ble_str, FONT_WIDTH);
     				i2c_ssd1306_text_xy(ble_str, 1, 2, false);
+    				//sprintf(bleTmp+strlen(bleTmp), "\n\tmac=%s name=%s ctlCode=0x%04X", ble_client.mac, ble_client.name, ble_CtlCode);
     			}
     			//
-    			Report(TAG_BLE, true, "%s\n", BleBuf);
+
+    			sprintf(bleTmp+strlen(bleTmp), "\n\tmac=%s name=%s ctlCode=0x%04X", ble_client.mac, ble_client.name, ble_CtlCode);
+    			Report(TAG_BLE, true, "%s\n", bleTmp);
+    		}
+    		break;
+    		case msg_bleCmd:
+    			ble_TxBuf[0] = '\0';
+    			switch (ble_status) {
+    				case bleON:
+    					strcpy(ble_TxBuf, "AT+REST");
+    				break;
+    				//case bleRST:
+    				//	strcpy(ble_TxBuf, "AT+REST");
+    				//break;
+    				case bleSCAN:
+    					strcpy(ble_TxBuf, "AT+SCAN");
+    				break;
+    				case bleRDY:
+    					sprintf(ble_TxBuf, "AT+CONADD=0x%s", ble_client.mac);// MacAddr=0x0000100014a,Name=Sabbat X12 Pro
+    					ble_status = bleCONADDR;
+    				break;
+    				case bleCON:
+    				break;
+    				case bleDISCADDR:
+    					strcpy(ble_TxBuf, "AT+DISCON");
+    				break;
+    			}
+    			if (strlen(ble_TxBuf)) bleWrite(ble_TxBuf, true);
     		break;
 #endif
     		case msg_sec:
     		{
     			uint32_t cur_sec = get_tmr(0);
+
 #ifdef SET_OLED_I2C
     			sec_to_str_time(cur_sec, buf);
     			i2c_ssd1306_text_xy(mkLineCenter(buf, FONT_WIDTH), 1, 1, true);
     			//
-#ifdef SET_BLE
+/*#ifdef SET_BLE
     			if (devError) {
 #endif
     				sprintf(buf, "Fifo:%u %u Err:%X", cnt_evt, max_evt, devError);
     				i2c_ssd1306_text_xy(buf, 1, 2, false);
 #ifdef SET_BLE
     			}
-#endif
+#endif*/
 
 #endif
+
+    			if (devError) errLedOn(NULL);
+
     			if (cur_sec >= (uint32_t)epoch) {
     				if (cur_sec == last_sec)
     					set_Date((time_t)(cur_sec));
     				else
     					last_sec = cur_sec;
     			}
-
-    			if (devError) errLedOn(NULL);
     		}
     		break;
     	}
 
+#ifdef SET_BLE
+    	if (tmr_ble_con) {
+    		if (check_tmr(tmr_ble_con)) {
+    			tmr_ble_con = 0;
+    			if (ble_status != bleCON) {
+    				ble_status = bleON;//bleDISCADDR;
+    				putMsg(msg_bleCmd);
+    			}
+    		}
+    	}
+#endif
+
+#ifdef SET_DFPLAYER
     	if (dfp_tmr_next) {
     		if (check_tmr10(dfp_tmr_next)) {
     			dfp_tmr_next = 0;
@@ -1047,6 +1211,7 @@ int main(void)
     			putMsg(msg_newDirSel);
     		}
     	}
+#endif
 
 
     /* USER CODE END WHILE */
@@ -1836,6 +2001,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 			char *uki = NULL;
 			if ((uki = strstr(ble_RxBuf, "\r\r\n"))) {
 				*uki = '\0';
+				memset(BleBuf, 0, sizeof(BleBuf));
 				strncpy(BleBuf, ble_RxBuf, strlen(ble_RxBuf));
 
 				putMsg(msg_bleRx);
