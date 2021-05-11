@@ -175,6 +175,8 @@ uint8_t Report(const char *tag, bool addTime, const char *fmt, ...);
 #define KBD_INT_EXTI_IRQn EXTI1_IRQn
 #define SPI1_NSS_Pin GPIO_PIN_4
 #define SPI1_NSS_GPIO_Port GPIOA
+#define BLE_CONN_Pin GPIO_PIN_1
+#define BLE_CONN_GPIO_Port GPIOB
 #define IRED_Pin GPIO_PIN_2
 #define IRED_GPIO_Port GPIOB
 #define LED_ERROR_Pin GPIO_PIN_12
@@ -259,6 +261,10 @@ uint8_t devError;
 
 
 #ifdef SET_BLE
+
+	#define BLE_CONN_DOWN() HAL_GPIO_WritePin(BLE_CONN_GPIO_Port, BLE_CONN_Pin, GPIO_PIN_RESET);//set to 0
+	#define BLE_CONN_UP() HAL_GPIO_WritePin(BLE_CONN_GPIO_Port, BLE_CONN_Pin, GPIO_PIN_SET);//set to 1
+
 	#define MAX_BLE_BUF 255
 
 	#pragma pack(push,1)

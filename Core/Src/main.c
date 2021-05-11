@@ -82,7 +82,8 @@ DMA_HandleTypeDef hdma_usart6_tx;
 //const char *version = "1.1 (07.05.2021)";// add infrared control module (TL1838)
 //const char *version = "1.2 (08.05.2021)";// add BLE audio module (uart) - first step (host version - listen client)
 //const char *version = "1.3 (09.05.2021)";// minor changes for BLE audio module support - second step
-const char *version = "1.4 (10.05.2021)";// major changes for BLE audio module : support 'income_opid:' message from ble_client's
+//const char *version = "1.4 (10.05.2021)";// major changes for BLE audio module : support 'income_opid:' message from ble_client's
+const char *version = "1.5 (11.05.2021)";// add ble_connect_enable_pin
 
 
 
@@ -95,7 +96,7 @@ uint8_t max_evt = 0;
 UART_HandleTypeDef *portLOG = &huart1;
 
 //1620036392;//1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
-volatile time_t epoch = 1620673738;//1620557655;//1620467295;//1620406195;//1620329368;//1620246336;//1620214632;//1620063356;
+volatile time_t epoch = 1620725850;//1620673738;//1620557655;//1620467295;//1620406195;//1620329368;//1620246336;//1620214632;//1620063356;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -367,6 +368,15 @@ void parseCtl(uint16_t ccode)
 	if (ev != msg_none) putMsg(ev);
 }
 //-------------------------------------------------------------------------------------------
+void blePin()
+{
+	BLE_CONN_DOWN();
+	uint32_t start = HAL_GetTick();
+	HAL_Delay(9);
+	BLE_CONN_UP();
+	Report(TAG_BLE, true, "\t*** BLE_CONN_PIN UP (%lu) ***\n", HAL_GetTick() - start);
+}
+//-------------------------------------------------------------------------------------------
 #endif
 //*******************************************************************************************
 
@@ -419,6 +429,7 @@ int main(void)
     HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
 
 
+
     //"start" rx_interrupt
     HAL_UART_Receive_IT(portLOG, (uint8_t *)&uRxByte, 1);
 #ifdef SET_DFPLAYER
@@ -426,6 +437,8 @@ int main(void)
 #endif
 #ifdef SET_BLE
     HAL_UART_Receive_IT(portBLE, (uint8_t *)&ble_uRxByte, 1);
+
+    BLE_CONN_DOWN();
 #endif
 
     // start timer3 in interrupt mode
@@ -498,9 +511,11 @@ int main(void)
 #endif
 
 #ifdef SET_BLE
-	strcpy(ble_TxBuf, "AT+DISCON");//"AT+REST");// MacAddr=0x0000100014a,Name=Sabbat X12 Pro
+	strcpy(ble_TxBuf, "AT+REST");// MacAddr=0x0000100014a,Name=Sabbat X12 Pro
 	bleWrite(ble_TxBuf, true);
 	char bleTmp[MAX_BLE_BUF] = {0};
+	//BLE_CONN_DOWN();
+	blePin();
 #endif
 
     bool startOne = true;
@@ -1031,7 +1046,7 @@ int main(void)
     				ble_CtlInd++;
     				ble_CtlInd &= 1;
     			} else if (strstr(bleTmp, "OK+")) {
-    				if (ble_status == bleCONADDR) tmr_ble_con = get_tmr(5);
+    				if (ble_status == bleCONADDR) tmr_ble_con = get_tmr(10);
     			} else if (strstr(bleTmp, "ERR")) {
     				if (ble_status == bleCONADDR) {
     					tmr_ble_con = 0;
@@ -1045,9 +1060,13 @@ int main(void)
     			} else if (strstr(bleTmp, "POWER ON")) {
     				e = msg_bleCmd;//send rst
     				ble_status = bleSCAN;
-    			}/* else if (strstr(bleTmp, "OK+REST")) {
-    				//ble_status = bleRST;
-    			}*/ else if ((uks = strstr(bleTmp, "Name"))) {
+    				//blePin();
+    			} else if (strstr(bleTmp, "OK+DISCON")) {
+    				blePin();
+    				ble_status = bleSCAN;//send scan
+    				e = msg_bleCmd;
+    			} else if ((uks = strstr(bleTmp, "Name"))) {
+    				//
     				uks += 4;
     				if ((*uks == '=') || (*uks == ':')) uks++;
     				dl = strlen(uks);
@@ -1096,6 +1115,9 @@ int main(void)
     				strcpy(ble_str, "BLE cli discon.");
     				ble_status = bleSCAN;//send scan
     				e = msg_bleCmd;
+    				//
+    				BLE_CONN_UP();
+    				//
     			} else ble_client.con = 0;
     			//
     			if (e != msg_none) putMsg(e);
@@ -1116,12 +1138,13 @@ int main(void)
     			ble_TxBuf[0] = '\0';
     			switch (ble_status) {
     				case bleON:
+    				case bleRST:
     					strcpy(ble_TxBuf, "AT+REST");
     				break;
-    				//case bleRST:
-    				//	strcpy(ble_TxBuf, "AT+REST");
-    				//break;
     				case bleSCAN:
+    					//
+    					BLE_CONN_DOWN();
+    					//
     					strcpy(ble_TxBuf, "AT+SCAN");
     				break;
     				case bleRDY:
@@ -1586,7 +1609,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 9600;//115200;
+  huart2.Init.BaudRate = 9600;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -1690,6 +1713,9 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(SPI1_NSS_GPIO_Port, SPI1_NSS_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(BLE_CONN_GPIO_Port, BLE_CONN_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LED_ERROR_Pin|LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : KBD_INT_Pin */
@@ -1705,18 +1731,18 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(SPI1_NSS_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : BLE_CONN_Pin LED_ERROR_Pin */
+  GPIO_InitStruct.Pin = BLE_CONN_Pin|LED_ERROR_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
   /*Configure GPIO pin : IRED_Pin */
   GPIO_InitStruct.Pin = IRED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(IRED_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : LED_ERROR_Pin */
-  GPIO_InitStruct.Pin = LED_ERROR_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
-  HAL_GPIO_Init(LED_ERROR_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LED_Pin */
   GPIO_InitStruct.Pin = LED_Pin;
@@ -1739,7 +1765,7 @@ static void MX_GPIO_Init(void)
 void errLedOn(const char *from)
 {
 	HAL_GPIO_WritePin(LED_ERROR_GPIO_Port, LED_ERROR_Pin, GPIO_PIN_SET);//LED OFF
-	HAL_Delay(20);
+	HAL_Delay(25);
 	HAL_GPIO_WritePin(LED_ERROR_GPIO_Port, LED_ERROR_Pin, GPIO_PIN_RESET);//LED ON
 
 	if (from) Report(NULL, true, "Error in function '%s'\r\n", from);
@@ -1897,12 +1923,12 @@ size_t len = MAX_UART_BUF;
 int dl = 0;
 
 
-	if (!uartRdy) {
+	/*if (!uartRdy) {
 		HAL_GPIO_WritePin(LED_ERROR_GPIO_Port, LED_ERROR_Pin, GPIO_PIN_SET);//ON err_led
 		return 1;
 	} else {
 		HAL_GPIO_WritePin(LED_ERROR_GPIO_Port, LED_ERROR_Pin, GPIO_PIN_RESET);//OFF err_led
-	}
+	}*/
 
 #ifdef SET_STATIC_MEM
 	char *buff = &PrnBuf[0];
