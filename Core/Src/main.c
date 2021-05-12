@@ -83,7 +83,8 @@ DMA_HandleTypeDef hdma_usart6_tx;
 //const char *version = "1.2 (08.05.2021)";// add BLE audio module (uart) - first step (host version - listen client)
 //const char *version = "1.3 (09.05.2021)";// minor changes for BLE audio module support - second step
 //const char *version = "1.4 (10.05.2021)";// major changes for BLE audio module : support 'income_opid:' message from ble_client's
-const char *version = "1.5 (11.05.2021)";// add ble_connect_enable_pin
+//const char *version = "1.5 (11.05.2021)";// add ble_connect_enable_pin
+const char *version = "1.6 (12.05.2021)";// add ble_clients list
 
 
 
@@ -96,7 +97,8 @@ uint8_t max_evt = 0;
 UART_HandleTypeDef *portLOG = &huart1;
 
 //1620036392;//1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
-volatile time_t epoch = 1620725850;//1620673738;//1620557655;//1620467295;//1620406195;//1620329368;//1620246336;//1620214632;//1620063356;
+//1620725850;//1620673738;//1620557655;//1620467295;//1620406195;//1620329368;//1620246336;//1620214632;//1620063356;
+volatile time_t epoch = 1620850510;//1620827210;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -212,6 +214,18 @@ bool kbdEnable = false;
 	uint32_t tmr_ble_con = 0;
 	uint16_t ble_CtlCode = 0;
 	uint8_t ble_CtlInd = 0;
+	//
+	ble_cli_hdr ble_hdr;
+	int8_t ble_index = -1;
+
+	const char *ble_allName[3] =
+	{
+		"Sabbat",
+		"S650",
+		"E5 Play"
+	};
+	const uint8_t ble_maxName = 3;
+
 #endif
 
 /* USER CODE END PV */
@@ -368,6 +382,22 @@ void parseCtl(uint16_t ccode)
 	if (ev != msg_none) putMsg(ev);
 }
 //-------------------------------------------------------------------------------------------
+bool ble_checkName(char *name)
+{
+bool ret = false;
+
+	if (!name || !strlen(name)) return ret;
+
+	for (uint8_t i = 0; i < ble_maxName; i++) {
+		if (strstr(ble_allName[i], name)) {
+			ret = true;
+			break;
+		}
+	}
+
+	return ret;
+}
+//-------------------------------------------------------------------------------------------
 void blePin()
 {
 	BLE_CONN_DOWN();
@@ -375,6 +405,125 @@ void blePin()
 	HAL_Delay(9);
 	BLE_CONN_UP();
 	Report(TAG_BLE, true, "\t*** BLE_CONN_PIN UP (%lu) ***\n", HAL_GetTick() - start);
+}
+//-------------------------------------------------------------------------------------------
+void ble_hdrClear()
+{
+	ble_hdr.lock = ble_hdr.total = 0;
+	ble_hdr.begin = ble_hdr.end = NULL;
+}
+//-------------------------------------------------------------------------------------------
+uint8_t ble_getTotalRec()
+{
+	while (ble_hdr.lock) { HAL_Delay(1); };
+	//
+	ble_hdr.lock = 1;
+	uint8_t ret = ble_hdr.total;
+	ble_hdr.lock = 0;
+
+	return ret;
+}
+//-------------------------------------------------------------------------------------------
+int8_t ble_addRec(ble_client_t *rec)
+{
+int8_t ret = -1;
+
+	while (ble_hdr.lock) { HAL_Delay(1); };
+	//
+	ble_hdr.lock = 1;
+	uint8_t err = devOK;
+	bool add = true;
+	//
+	if (ble_hdr.total) {
+		ble_cli_rec *tp = NULL, *tmp = ble_hdr.begin;
+		while (tmp) {
+			ble_client_t *rc = (ble_client_t *)tmp->rec;
+			if (!strncmp(rc->name, rec->name, strlen(rc->name))) {
+				if (!strncmp(rc->mac, rec->mac, strlen(rc->mac))) {
+					add = false;
+					break;
+				}
+			} else {
+				tp = (ble_cli_rec *)tmp->next;
+				tmp = tp;
+			}
+		}
+	}
+	//
+	if (add) {
+		//
+		ble_cli_rec *cur = (ble_cli_rec *)calloc(1, sizeof(ble_cli_rec));
+		if (cur) {
+			ble_client_t *rc = (ble_client_t *)calloc(1, sizeof(ble_client_t));//(ble_client_t *)cur->rec;
+			if (rc) {
+				memcpy((uint8_t *)rc , (uint8_t *)rec, sizeof(ble_client_t));
+				if (!ble_hdr.total) {
+					ble_hdr.begin = ble_hdr.end = cur;
+				} else {
+					ble_cli_rec *back = ble_hdr.end;
+					ble_hdr.end = cur;
+					back->next = cur;
+				}
+				cur->rec = (void *)rc;
+				cur->next = NULL;
+				cur->ind = ble_hdr.total;
+				ret = (int8_t)cur->ind;
+				ble_hdr.total++;
+			} else err |= devMem;
+		} else err |= devMem;
+		//
+	}
+	//
+	ble_hdr.lock = 0;
+
+	devError |= err;
+
+	return ret;
+}
+//-------------------------------------------------------------------------------------------
+ble_cli_rec *ble_getRec(uint8_t ind)
+{
+	while (ble_hdr.lock) { HAL_Delay(1); };
+	//
+	ble_hdr.lock = 1;
+	//
+	ble_cli_rec *tmp = NULL, *cur = NULL;
+	if (ind < ble_hdr.total) {
+		cur = ble_hdr.begin;
+		while (cur) {
+			if (cur->ind == ind) break;
+			tmp = (ble_cli_rec *)cur->next;
+			cur = tmp;
+		}
+	}
+	//
+	ble_hdr.lock = 0;
+
+	return cur;
+}
+//-------------------------------------------------------------------------------------------
+void ble_prnRec()
+{
+	char stz[128];
+	ble_cli_hdr hdr;
+	while (ble_hdr.lock) { HAL_Delay(1); }
+	ble_hdr.lock = 1;
+	memcpy((uint8_t *)&hdr, (uint8_t *)&ble_hdr, sizeof(ble_cli_hdr));
+	ble_hdr.lock = 0;
+
+	sprintf(stz, "\n\tHDR: total=%u begin=%p end=%p\n", hdr.total, hdr.begin, hdr.end);
+	Report(TAG_BLE, true, "%s", stz);
+
+	uint8_t i = 255;
+	while (++i < hdr.total) {
+		ble_cli_rec *adr = ble_getRec(i);
+		if (adr) {
+			ble_client_t *cli = (ble_client_t *)adr->rec;
+			sprintf(stz, "\tREC: ind=%u next=%p rec=%p: con=0x%X name='%.*s' mac=0x%.*s\n",
+						adr->ind, adr->next, adr->rec, cli->con, sizeof(cli->name), cli->name, sizeof(cli->mac), cli->mac);
+			Report(NULL, false, "%s", stz);
+		}
+	};
 }
 //-------------------------------------------------------------------------------------------
 #endif
@@ -516,6 +665,8 @@ int main(void)
 	char bleTmp[MAX_BLE_BUF] = {0};
 	//BLE_CONN_DOWN();
 	blePin();
+	//
+	ble_hdrClear();
 #endif
 
     bool startOne = true;
@@ -660,6 +811,7 @@ int main(void)
     					break;
     				//
     				case '3':
+    					new_evt = msg_bleList;
     					break;
     				case '2':
     					new_evt = msg_ukDirSel;//msg_eqGet;
@@ -1030,6 +1182,7 @@ int main(void)
     		{
     			char *uks = NULL, *uke = NULL;
     			int dl = 0;
+    			bool cli_add = false;
     			strcpy(bleTmp, BleBuf);
     			evt_t e = msg_none;
     			//
@@ -1065,51 +1218,55 @@ int main(void)
     				blePin();
     				ble_status = bleSCAN;//send scan
     				e = msg_bleCmd;
-    			} else if ((uks = strstr(bleTmp, "Name"))) {
+    			} else if (strstr(bleTmp, "New Devices")) {
     				//
-    				uks += 4;
-    				if ((*uks == '=') || (*uks == ':')) uks++;
-    				dl = strlen(uks);
-    				uke = strchr(uks, '\n');
-    				if (uke && dl) dl--;//*uke = '\0';
-    				if (dl > sizeof(ble_client.name) - 1) dl = sizeof(ble_client.name) - 1;
-    				memset(ble_client.name, 0, sizeof(ble_client.name));
-    				strncpy(ble_client.name, uks, dl);
-    				if ( (strstr(ble_client.name, "Sabbat")) ||
-    						(strstr(ble_client.name, "S650")) ||
-								(strstr(ble_client.name, "E5")) ) {
-    					if ((uks = strstr(bleTmp, "MacAdd"))) {
-    						uks += 7;
-    						uke = strstr(bleTmp, "0x");
-    						if (uke) {
-    							memset(ble_client.mac, 0, sizeof(ble_client.mac));
-    							uks = uke;
-    							uks += 2;
-    							uke = strchr(uks, ',');
-    							if (uke) {
-    								dl = uke - uks;
-    								if (dl > (sizeof(ble_client.mac) - 1)) dl = sizeof(ble_client.mac) - 1;
-    								ble_client.mac[0] = '0';
-    								if (dl == 11) strncpy(&ble_client.mac[1], uks, dl);
-    								         else strncpy(&ble_client.mac[0], uks, dl);
-    								//
-    								if (!tmr_ble_con && (ble_status != bleCON)) {
-    									ble_status = bleRDY;//send connect
-    									e = msg_bleCmd;
-    								}
-    								//
-    							}
-    						}
-    					}
-    				} else {
-    					memset((uint8_t *)&ble_client, 0, sizeof(ble_client_t));
+    				if ((uks = strstr(bleTmp, "Name"))) {
+    					uks += 4;
+    					if ((*uks == '=') || (*uks == ':')) uks++;
+    					dl = strlen(uks);
+    					uke = strchr(uks, '\n');
+    					if (uke && dl) dl--;//*uke = '\0';
+    					if (dl > sizeof(ble_client.name) - 1) dl = sizeof(ble_client.name) - 1;
+    					memset(ble_client.name, 0, sizeof(ble_client.name));
+    					strncpy(ble_client.name, uks, dl);
+    					cli_add = true;
     				}
+    				//
+    				if ((uks = strstr(bleTmp, "MacAdd"))) {
+    					uks += 7;
+    					uke = strstr(bleTmp, "0x");
+    					if (uke) {
+    						uks = uke;
+    						uks += 2;
+    						uke = strchr(uks, ',');
+    						if (uke) {
+    							dl = uke - uks;
+    							if (dl > (sizeof(ble_client.mac) - 1)) dl = sizeof(ble_client.mac) - 1;
+    							memset(ble_client.mac, 0, sizeof(ble_client.mac));
+    							ble_client.mac[0] = '0';
+    							if (dl == 11) strncpy(&ble_client.mac[1], uks, dl);
+    							         else strncpy(&ble_client.mac[0], uks, dl);
+    				    	}
+    					}
+    				}
+    				//BLE_CONN_UP();
+    				//
+    				if (ble_checkName(ble_client.name)) {
+    					if (!tmr_ble_con && (ble_status != bleCON)) {
+    						ble_status = bleRDY;//send connect
+    						e = msg_bleCmd;
+    					}
+    				}
+    				//
     			} else if (strstr(bleTmp, "CONNECTED")) {
     				tmr_ble_con = 0;
     				ble_client.con = 0x81;
     				strcpy(ble_str, ble_client.name);
     				ble_status = bleCON;
+
     			} else if (strstr(bleTmp, "DISCONNECT")) {
+    				BLE_CONN_UP();
+    				//
     				memset((uint8_t *)&ble_client, 0, sizeof(ble_client_t));
     				ble_client.con = 0x80;
     				strcpy(ble_str, "BLE cli discon.");
@@ -1125,13 +1282,31 @@ int main(void)
     			if (ble_client.con & 0x80) {// con/discon event !
     				ble_client.con = 0;
     				mkLineCenter(ble_str, FONT_WIDTH);
-    				i2c_ssd1306_text_xy(ble_str, 1, 2, false);
+    				i2c_ssd1306_text_xy(ble_str, 1, 2, true);
     				//sprintf(bleTmp+strlen(bleTmp), "\n\tmac=%s name=%s ctlCode=0x%04X", ble_client.mac, ble_client.name, ble_CtlCode);
+
     			}
     			//
 
     			sprintf(bleTmp+strlen(bleTmp), "\n\tmac=%s name=%s ctlCode=0x%04X", ble_client.mac, ble_client.name, ble_CtlCode);
     			Report(TAG_BLE, true, "%s\n", bleTmp);
+
+    			//
+    			if (cli_add) {
+    				ble_index = ble_addRec(&ble_client);
+    				if (ble_index >= 0) {
+    					strcpy(ble_str, ble_client.name);
+    					mkLineCenter(ble_str, FONT_WIDTH);
+    					i2c_ssd1306_text_xy(ble_str, 1, 2, false);
+
+    					Report(TAG_BLE, true, "Cli #%u add OK\n", ble_index);
+    				} else {
+    					Report(TAG_BLE, true, "Cli already present\n");
+    				}
+    			}
+    			//
+    			//memset((uint8_t *)&ble_client, 0, sizeof(ble_client_t));
+    			//
     		}
     		break;
     		case msg_bleCmd:
@@ -1159,6 +1334,14 @@ int main(void)
     			}
     			if (strlen(ble_TxBuf)) bleWrite(ble_TxBuf, true);
     		break;
+    		case msg_bleList:
+    		{
+    			blePin();
+    			//
+    			ble_prnRec();
+    			//
+    		}
+    		break;
 #endif
     		case msg_sec:
     		{
@@ -1168,14 +1351,14 @@ int main(void)
     			sec_to_str_time(cur_sec, buf);
     			i2c_ssd1306_text_xy(mkLineCenter(buf, FONT_WIDTH), 1, 1, true);
     			//
-/*#ifdef SET_BLE
+#ifdef SET_BLE
     			if (devError) {
 #endif
     				sprintf(buf, "Fifo:%u %u Err:%X", cnt_evt, max_evt, devError);
     				i2c_ssd1306_text_xy(buf, 1, 2, false);
 #ifdef SET_BLE
     			}
-#endif*/
+#endif
 
 #endif
 

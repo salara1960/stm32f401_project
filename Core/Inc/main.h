@@ -106,6 +106,7 @@ typedef enum {
 	msg_dfpRX,
 	msg_bleRx,
 	msg_bleCmd,
+	msg_bleList,
 	msg_none
 } evt_t;
 
@@ -275,6 +276,24 @@ uint8_t devError;
 	} ble_client_t;
 	#pragma pack(pop)
 
+	#pragma pack(push,1)
+	typedef struct {
+		uint8_t ind;
+		void *rec;
+		void *next;
+	} ble_cli_rec;
+	#pragma pack(pop)
+
+	#pragma pack(push,1)
+	typedef struct {
+		uint8_t lock;
+		uint8_t total;
+		ble_cli_rec *begin;
+		ble_cli_rec *end;
+	} ble_cli_hdr;
+	#pragma pack(pop)
+
+
 	enum {
 		bleERR = -1,
 		bleON,
@@ -300,6 +319,7 @@ uint8_t devError;
 //	volatile uint8_t ble_rx_uk;
 //	volatile uint8_t ble_uRxByte = 0;
 //	static char BleBuf[255];
+
 #endif
 
 
