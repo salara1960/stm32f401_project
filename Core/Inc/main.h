@@ -107,6 +107,8 @@ typedef enum {
 	msg_bleRx,
 	msg_bleCmd,
 	msg_bleList,
+	msg_bleCliSave,
+	msg_bleEnableList,
 	msg_none
 } evt_t;
 
@@ -268,10 +270,21 @@ uint8_t devError;
 
 	#define MAX_BLE_BUF 255
 
+
+	#define ble_maxName_def 2
+	#define MAX_NAME_LEN 16
+	#define MAX_BLE 16
+
+	#pragma pack(push,1)
+	typedef struct {
+		char name[MAX_NAME_LEN];
+	} str_name_t;
+	#pragma pack(pop)
+
 	#pragma pack(push,1)
 	typedef struct {
 		uint8_t con;
-		char name[16];
+		char name[MAX_NAME_LEN];
 		char mac[15];
 	} ble_client_t;
 	#pragma pack(pop)

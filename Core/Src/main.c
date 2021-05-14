@@ -84,7 +84,9 @@ DMA_HandleTypeDef hdma_usart6_tx;
 //const char *version = "1.3 (09.05.2021)";// minor changes for BLE audio module support - second step
 //const char *version = "1.4 (10.05.2021)";// major changes for BLE audio module : support 'income_opid:' message from ble_client's
 //const char *version = "1.5 (11.05.2021)";// add ble_connect_enable_pin
-const char *version = "1.6 (12.05.2021)";// add ble_clients list
+//const char *version = "1.6 (12.05.2021)";// add ble_clients list
+//const char *version = "1.7 (13.05.2021)";
+const char *version = "1.8 (14.05.2021)";// add support ble clients enable list : init, add, print
 
 
 
@@ -98,7 +100,7 @@ UART_HandleTypeDef *portLOG = &huart1;
 
 //1620036392;//1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
 //1620725850;//1620673738;//1620557655;//1620467295;//1620406195;//1620329368;//1620246336;//1620214632;//1620063356;
-volatile time_t epoch = 1620850510;//1620827210;
+volatile time_t epoch = 1621015568;//1620893900;//1620850510;//1620827210;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -218,13 +220,14 @@ bool kbdEnable = false;
 	ble_cli_hdr ble_hdr;
 	int8_t ble_index = -1;
 
-	const char *ble_allName[3] =
+	const char *ble_allName_def[ble_maxName_def] =
 	{
 		"Sabbat",
-		"S650",
-		"E5 Play"
+		"S650"
 	};
-	const uint8_t ble_maxName = 3;
+
+	str_name_t cli_name[MAX_BLE];
+	uint8_t total_cli = 0;
 
 #endif
 
@@ -345,6 +348,42 @@ evt_t ret = msg_empty;
 //*******************************************************************************************
 #ifdef SET_BLE
 //-------------------------------------------------------------------------------------------
+void ble_init_names()
+{
+	memset((char *)&cli_name[0], 0, sizeof(str_name_t) * MAX_BLE);
+
+	for (uint8_t i = 0; i < ble_maxName_def; i++)
+		strcpy(cli_name[i].name, ble_allName_def[i]);
+
+	total_cli = ble_maxName_def;
+}
+//-------------------------------------------------------------------------------------------
+uint8_t ble_add_names(char *name)
+{
+uint8_t ok = 0;
+
+	uint8_t i = 255;
+	while (++i < total_cli) {
+		if (!strncmp(cli_name[i].name, name, strlen(name))) ok |= 1;
+	}
+
+	if (!ok) strcpy(cli_name[total_cli++].name, name);
+
+	return ok;
+}
+//-------------------------------------------------------------------------------------------
+void ble_prnEnableList()
+{
+	if (!total_cli) return;
+
+	Report(TAG_BLE, true, "Ble enable list [%u]:\n", total_cli);
+
+	uint8_t i = 255;
+	while (++i < total_cli)
+		Report(NULL, false, "\t%s\n", cli_name[i].name);
+
+}
+//-------------------------------------------------------------------------------------------
 void bleWrite(char *str, bool prn)
 {
 	if (ble_withDMA) {
@@ -388,8 +427,8 @@ bool ret = false;
 
 	if (!name || !strlen(name)) return ret;
 
-	for (uint8_t i = 0; i < ble_maxName; i++) {
-		if (strstr(ble_allName[i], name)) {
+	for (uint8_t i = 0; i < total_cli; i++) {
+		if (strstr(cli_name[i].name, name)) {
 			ret = true;
 			break;
 		}
@@ -660,6 +699,9 @@ int main(void)
 #endif
 
 #ifdef SET_BLE
+	ble_init_names();
+	ble_prnEnableList();
+
 	strcpy(ble_TxBuf, "AT+REST");// MacAddr=0x0000100014a,Name=Sabbat X12 Pro
 	bleWrite(ble_TxBuf, true);
 	char bleTmp[MAX_BLE_BUF] = {0};
@@ -811,12 +853,13 @@ int main(void)
     					break;
     				//
     				case '3':
-    					new_evt = msg_bleList;
+    					//new_evt = msg_bleList;
     					break;
     				case '2':
     					new_evt = msg_ukDirSel;//msg_eqGet;
     					break;
     				case '1':
+    					new_evt = msg_bleCliSave;
     					break;
     			}
     			if (new_evt != msg_none) putMsg(new_evt);
@@ -1182,7 +1225,7 @@ int main(void)
     		{
     			char *uks = NULL, *uke = NULL;
     			int dl = 0;
-    			bool cli_add = false;
+    			bool cli_add = false, inv = false;
     			strcpy(bleTmp, BleBuf);
     			evt_t e = msg_none;
     			//
@@ -1219,6 +1262,8 @@ int main(void)
     				ble_status = bleSCAN;//send scan
     				e = msg_bleCmd;
     			} else if (strstr(bleTmp, "New Devices")) {
+    				//
+    				//i2c_ssd1306_shift(2, OLED_CMD_SHIFT_STOP);
     				//
     				if ((uks = strstr(bleTmp, "Name"))) {
     					uks += 4;
@@ -1263,7 +1308,7 @@ int main(void)
     				ble_client.con = 0x81;
     				strcpy(ble_str, ble_client.name);
     				ble_status = bleCON;
-
+    				inv = true;
     			} else if (strstr(bleTmp, "DISCONNECT")) {
     				BLE_CONN_UP();
     				//
@@ -1272,6 +1317,7 @@ int main(void)
     				strcpy(ble_str, "BLE cli discon.");
     				ble_status = bleSCAN;//send scan
     				e = msg_bleCmd;
+    				inv = false;
     				//
     				BLE_CONN_UP();
     				//
@@ -1282,7 +1328,7 @@ int main(void)
     			if (ble_client.con & 0x80) {// con/discon event !
     				ble_client.con = 0;
     				mkLineCenter(ble_str, FONT_WIDTH);
-    				i2c_ssd1306_text_xy(ble_str, 1, 2, true);
+    				i2c_ssd1306_text_xy(ble_str, 1, 2, inv);
     				//sprintf(bleTmp+strlen(bleTmp), "\n\tmac=%s name=%s ctlCode=0x%04X", ble_client.mac, ble_client.name, ble_CtlCode);
 
     			}
@@ -1298,8 +1344,13 @@ int main(void)
     					strcpy(ble_str, ble_client.name);
     					mkLineCenter(ble_str, FONT_WIDTH);
     					i2c_ssd1306_text_xy(ble_str, 1, 2, false);
+    					//i2c_ssd1306_shift(2, OLED_CMD_SHIFT_STOP);
 
     					Report(TAG_BLE, true, "Cli #%u add OK\n", ble_index);
+    					//
+    					//i2c_ssd1306_shift(2, OLED_CMD_SHIFT_START);
+
+    					putMsg(msg_bleList);
     				} else {
     					Report(TAG_BLE, true, "Cli already present\n");
     				}
@@ -1335,12 +1386,32 @@ int main(void)
     			if (strlen(ble_TxBuf)) bleWrite(ble_TxBuf, true);
     		break;
     		case msg_bleList:
-    		{
     			blePin();
     			//
     			ble_prnRec();
+    		break;
+    		case msg_bleCliSave:
+    			//i2c_ssd1306_shift(2, OLED_CMD_SHIFT_STOP);
+    			if (strlen(ble_client.name)) {
+    				strcpy(ble_str, ble_client.name);
+    				mkLineCenter(ble_str, FONT_WIDTH);
+    				i2c_ssd1306_text_xy(ble_str, 1, 2, false);
+    				if (!ble_add_names(ble_client.name)) {
+    					sprintf(buf, "Client '%s' add to enable list\n", ble_client.name);
+    					putMsg(msg_bleEnableList);
+    				} else {
+    					sprintf(buf, "Client '%s' already present in enable list\n", ble_client.name);
+    				}
+    				Report(TAG_BLE, true, "%s\n", buf);
+    				ble_prnEnableList();
+    			} else {
+    				i2c_ssd1306_clear_line(2);
+    			}
+    		break;
+    		case msg_bleEnableList:
     			//
-    		}
+    			//	update ble_enable_list : write cli_name[0]..cli_name[total_cli - 1] to flash (sector 0 page 0)
+    			//
     		break;
 #endif
     		case msg_sec:
