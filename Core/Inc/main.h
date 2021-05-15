@@ -109,6 +109,8 @@ typedef enum {
 	msg_bleList,
 	msg_bleCliSave,
 	msg_bleEnableList,
+	msg_spiRxDone,
+	msg_spiTxDone,
 	msg_none
 } evt_t;
 
@@ -147,7 +149,7 @@ typedef enum {
 //#define _30s (_1s * 30)
 
 #define MAX_UART_BUF  768
-#define MAX_FIFO_SIZE 50
+#define MAX_FIFO_SIZE 48
 
 //#define TIME_kbdKeyPressed 75
 

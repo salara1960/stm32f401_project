@@ -26,6 +26,11 @@ const uint32_t all_chipBLK[] = {
 	0, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024
 };
 
+
+uint8_t pageTmp[PAGE_BUF_SIZE + PAGE_HDR_BYTES] = {0};
+
+uint8_t w25_withDMA = 0;
+
 //------------------------------------------------------------------------------------------
 
 void W25_SELECT()   { W25_SEL(); } //HAL_GPIO_WritePin(W25_CS_GPIO_Port, W25_CS_Pin, GPIO_PIN_RESET);//set to 0
@@ -350,7 +355,7 @@ bool W25qxx_IsEmptyPage(uint32_t Page_Address, uint32_t OffsetInByte, uint32_t N
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "w25qxx CheckPage:0x%X(%u), Offset:%u, Bytes:%u begin...\r\n",
                  Page_Address, Page_Address, OffsetInByte, NumByteToCheck_up_to_PageSize);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
     uint32_t StartTime = HAL_GetTick();
 #endif
 
@@ -394,7 +399,7 @@ bool W25qxx_IsEmptyPage(uint32_t Page_Address, uint32_t OffsetInByte, uint32_t N
 
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "w25qxx CheckPage is Empty in %u ms\r\n", HAL_GetTick() - StartTime);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
 #endif
 
     w25qxx.Lock = 0;
@@ -425,7 +430,7 @@ bool W25qxx_IsEmptySector(uint32_t Sector_Address, uint32_t OffsetInByte, uint32
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "w25qxx CheckSector:0x%X(%u), Offset:%u, Bytes:%u begin...\r\n",
                  Sector_Address, Sector_Address, OffsetInByte, NumByteToCheck_up_to_SectorSize);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
     uint32_t StartTime = HAL_GetTick();
 #endif
 
@@ -469,7 +474,7 @@ bool W25qxx_IsEmptySector(uint32_t Sector_Address, uint32_t OffsetInByte, uint32
 
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "w25qxx CheckSector is Empty in %u ms\r\n", HAL_GetTick() - StartTime);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
 #endif
 
     w25qxx.Lock = 0;
@@ -480,7 +485,7 @@ NOT_EMPTY:
 
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "w25qxx CheckSector is Not Empty in %u ms\r\n", HAL_GetTick() - StartTime);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
 #endif
 
     w25qxx.Lock = 0;
@@ -500,7 +505,7 @@ bool W25qxx_IsEmptyBlock(uint32_t Block_Address, uint32_t OffsetInByte, uint32_t
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "w25qxx CheckBlock:0x%X(%u), Offset:%u, Bytes:%u begin...\r\n",
                  Block_Address, Block_Address, OffsetInByte, NumByteToCheck_up_to_BlockSize);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
     uint32_t StartTime = HAL_GetTick();
 #endif
 
@@ -544,7 +549,7 @@ bool W25qxx_IsEmptyBlock(uint32_t Block_Address, uint32_t OffsetInByte, uint32_t
 
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "w25qxx CheckBlock is Empty in %u ms\r\n", HAL_GetTick() - StartTime);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
 #endif
 
     w25qxx.Lock = 0;
@@ -555,7 +560,7 @@ NOT_EMPTY:
 
 #ifdef W25QXX_DEBUG
 	Report(NULL, true, "w25qxx CheckBlock is Not Empty in %u ms\r\n", HAL_GetTick() - StartTime);
-	W25qxx_Delay(100);
+	//W25qxx_Delay(100);
 #endif
 
     w25qxx.Lock = 0;
@@ -629,59 +634,47 @@ void W25qxx_WritePage(uint8_t *pBuffer, uint32_t Page_Address, uint32_t OffsetIn
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "%s WritePage:0x%X(%u), Offset:%u ,Writes %u Bytes, begin...\r\n",
                  __func__, Page_Address, Page_Address, OffsetInByte, NumByteToWrite_up_to_PageSize);
-    W25qxx_Delay(100);
     uint32_t StartTime = HAL_GetTick();
 #endif
 
     W25qxx_WaitForWriteEnd();
     W25qxx_WriteEnable();
 
-    Page_Address = (Page_Address * w25qxx.PageSize) + OffsetInByte;
-    uint8_t *uk = NULL;
-    uint16_t len = 5;
-    if (w25qxx.ID >= W25Q256) {
-    	uint8_t dat[] = {2,
-    					(uint8_t)((Page_Address & 0xFF000000) >> 24),
-						(uint8_t)((Page_Address & 0xFF0000) >> 16),
-						(uint8_t)((Page_Address & 0xFF00) >> 8),
-						(uint8_t)(Page_Address & 0xFF)};
-    	uk = &dat[0];
-    } else {
-    	uint8_t dat[] = {2,
-    	        		(uint8_t)((Page_Address & 0xFF0000) >> 16),
-    	    			(uint8_t)((Page_Address & 0xFF00) >> 8),
-    	    			(uint8_t)(Page_Address & 0xFF)};
-    	uk = &dat[0];
-    	len--;
-    }
-    W25_SELECT();
+
+    //W25_SELECT();
     //W25qxx_Spi(0x02);
-    ////Page_Address = (Page_Address * w25qxx.PageSize) + OffsetInByte;
-    ////if (w25qxx.ID >= W25Q256) W25qxx_Spi((Page_Address & 0xFF000000) >> 24);
+    Page_Address = (Page_Address * w25qxx.PageSize) + OffsetInByte;
+    //if (w25qxx.ID >= W25Q256) W25qxx_Spi((Page_Address & 0xFF000000) >> 24);
     //W25qxx_Spi((Page_Address & 0xFF0000) >> 16);
     //W25qxx_Spi((Page_Address & 0xFF00) >> 8);
     //W25qxx_Spi(Page_Address&0xFF);
-    HAL_SPI_Transmit(portFLASH, uk, len, 100);
-    HAL_SPI_Transmit(portFLASH, pBuffer, NumByteToWrite_up_to_PageSize, 100);
-    W25_UNSELECT();
+    //HAL_SPI_Transmit(portFLASH, pBuffer, NumByteToWrite_up_to_PageSize, 150);
+    //W25_UNSELECT();
 
-    W25qxx_WaitForWriteEnd();
+    pageTmp[0] = 2;
+    pageTmp[1] = (Page_Address & 0xFF0000) >> 16;
+    pageTmp[2] = (Page_Address& 0xFF00) >> 8;
+    pageTmp[3] = Page_Address & 0xFF;
+    //pageTmp[4] = 0;
+    memcpy(&pageTmp[PAGE_HDR_BYTES], pBuffer, w25qxx.PageSize);
+    W25_SELECT();
+    if (w25_withDMA) {
+    	HAL_SPI_Transmit_DMA(portFLASH, pageTmp, sizeof(pageTmp));
+    } else {
+    	HAL_SPI_TransmitReceive(portFLASH, pageTmp, pageTmp, sizeof(pageTmp), 250);
+    	W25_UNSELECT();
 
+    	W25qxx_WaitForWriteEnd();
 #ifdef W25QXX_DEBUG
-    StartTime = HAL_GetTick() - StartTime;
-    for (uint32_t i = 0; i < NumByteToWrite_up_to_PageSize ; i++) {
-    	if ( (i % 8 == 0) && (i > 2) ) {
-    		Report(NULL, false, "\r\n");
-    		W25qxx_Delay(10);
+    	StartTime = HAL_GetTick() - StartTime;
+    	for (uint32_t i = 0; i < NumByteToWrite_up_to_PageSize ; i++) {
+    		if ( (i % 16 == 0) && (i > 2) ) Report(NULL, false, "\r\n");
+    		Report(NULL, false, "0x%02X,", pBuffer[i]);
     	}
-    	Report(NULL, false, "0x%02X,", pBuffer[i]);
-    }
-    Report(NULL, false, "\r\n");
-    Report(NULL, true, "%s done after %u ms\r\n", __func__, StartTime);
-    W25qxx_Delay(100);
-#else
-    W25qxx_Delay(1);
+    	Report(NULL, false, "\r\n");
+    	Report(NULL, true, "%s done after %u ms\r\n", __func__, StartTime);
 #endif
+    }
 
     w25qxx.Lock = 0;
 }
@@ -694,13 +687,13 @@ void W25qxx_WriteSector(uint8_t *pBuffer, uint32_t Sector_Address, uint32_t Offs
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "%s WriteSector:0x%X(%u), Offset:%u ,Write %u Bytes, begin...\r\n",
                  __func__, Sector_Address, Sector_Address, OffsetInByte, NumByteToWrite_up_to_SectorSize);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
 #endif
 
     if (OffsetInByte >= w25qxx.SectorSize) {
 #ifdef W25QXX_DEBUG
     	Report(NULL, true, "---w25qxx WriteSector Faild!\r\n");
-    	W25qxx_Delay(100);
+    	//W25qxx_Delay(100);
 #endif
         return;
     }
@@ -725,7 +718,7 @@ void W25qxx_WriteSector(uint8_t *pBuffer, uint32_t Sector_Address, uint32_t Offs
 
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "%s Done\r\n", __func__);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
 #endif
 
 }
@@ -738,13 +731,13 @@ void W25qxx_WriteBlock(uint8_t *pBuffer, uint32_t Block_Address, uint32_t Offset
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "%s WriteBlock:0x%X(%u), Offset:%u ,Write %u Bytes, begin...\r\n",
                  __func__, Block_Address, Block_Address, OffsetInByte, NumByteToWrite_up_to_BlockSize);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
 #endif
 
     if (OffsetInByte >= w25qxx.BlockSize) {
 #ifdef W25QXX_DEBUG
     	Report(NULL, true, "%s Faild!\r\n", __func__);
-    	W25qxx_Delay(100);
+    	//W25qxx_Delay(100);
 #endif
         return;
     }
@@ -768,7 +761,7 @@ void W25qxx_WriteBlock(uint8_t *pBuffer, uint32_t Block_Address, uint32_t Offset
 
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "%s done\r\n", __func__);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
 #endif
 
 }
@@ -828,15 +821,15 @@ void W25qxx_ReadBytes(uint8_t *pBuffer, uint32_t ReadAddr, uint32_t NumByteToRea
     for (uint32_t i = 0; i < NumByteToRead ; i++) {
     	if ((i % 8 == 0) && (i > 2)) {
     		Report(NULL, false, "\r\n");
-    		W25qxx_Delay(10);
+    		//W25qxx_Delay(10);
     	}
     	Report(NULL, false, "0x%02X,", pBuffer[i]);
     }
     Report(NULL, false, "\r\n");
     Report(NULL, true, "%s done after %u ms\r\n", __func__, StartTime);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
 #else
-    W25qxx_Delay(1);
+    //W25qxx_Delay(1);
 #endif
 
     w25qxx.Lock = 0;
@@ -856,37 +849,47 @@ void W25qxx_ReadPage(uint8_t *pBuffer, uint32_t Page_Address, uint32_t OffsetInB
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "%s:0x%X(%u), Offset:%u ,Read %u Bytes, begin...\r\n",
                  __func__, Page_Address, Page_Address, OffsetInByte, NumByteToRead_up_to_PageSize);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
     uint32_t StartTime = HAL_GetTick();
 #endif
 
     Page_Address = Page_Address * w25qxx.PageSize + OffsetInByte;
 
+    //W25_SELECT();
+    //W25qxx_Spi(0x0B);
+    //if (w25qxx.ID >= W25Q256) W25qxx_Spi((Page_Address & 0xFF000000) >> 24);
+    //W25qxx_Spi((Page_Address & 0xFF0000) >> 16);
+    //W25qxx_Spi((Page_Address& 0xFF00) >> 8);
+    //W25qxx_Spi(Page_Address & 0xFF);
+    //W25qxx_Spi(0);
+    //HAL_SPI_Receive(portFLASH, pBuffer, NumByteToRead_up_to_PageSize, 200);
+    //W25_UNSELECT();
+    //
+    pageTmp[0] = 0x0b;
+    pageTmp[1] = (Page_Address & 0xFF0000) >> 16;
+    pageTmp[2] = (Page_Address& 0xFF00) >> 8;
+    pageTmp[3] = Page_Address & 0xFF;
+    //pageTmp[4] = 0;
     W25_SELECT();
-    W25qxx_Spi(0x0B);
-    if (w25qxx.ID >= W25Q256) W25qxx_Spi((Page_Address & 0xFF000000) >> 24);
-    W25qxx_Spi((Page_Address & 0xFF0000) >> 16);
-    W25qxx_Spi((Page_Address& 0xFF00) >> 8);
-    W25qxx_Spi(Page_Address & 0xFF);
-    W25qxx_Spi(0);
-    HAL_SPI_Receive(portFLASH, pBuffer, NumByteToRead_up_to_PageSize, 100);
-    W25_UNSELECT();
+    if (w25_withDMA) {
+    	HAL_SPI_Receive_DMA(portFLASH, pageTmp, sizeof(pageTmp));
+    } else {
+    	HAL_SPI_TransmitReceive(portFLASH, pageTmp, pageTmp, sizeof(pageTmp), 200);
+    	memcpy(pBuffer, &pageTmp[PAGE_HDR_BYTES + 1], w25qxx.PageSize);
 
+    	W25_UNSELECT();
+    	//
 #ifdef W25QXX_DEBUG
-    StartTime = HAL_GetTick() - StartTime;
-    for (uint32_t i = 0; i < NumByteToRead_up_to_PageSize ; i++) {
-    	if ((i % 8 == 0) && (i > 2)) {
-    		Report(NULL, false, "\r\n");
-    		W25qxx_Delay(10);
+    	StartTime = HAL_GetTick() - StartTime;
+    	for (uint32_t i = 0; i < NumByteToRead_up_to_PageSize ; i++) {
+    		if ((i % 16 == 0) && (i > 2)) Report(NULL, false, "\r\n");
+    		Report(NULL, false, "0x%02X,", pBuffer[i]);
     	}
-    	Report(NULL, false, "0x%02X,", pBuffer[i]);
-    }
-    Report(NULL, false, "\r\n");
-    Report(NULL, true, "%s done after %u ms\r\n", __func__, StartTime);
-    W25qxx_Delay(100);
-#else
-    W25qxx_Delay(1);
+    	Report(NULL, false, "\r\n");
+    	Report(NULL, true, "%s done after %u ms\r\n", __func__, StartTime);
 #endif
+    	//
+    }
 
     w25qxx.Lock = 0;
 }
@@ -899,13 +902,13 @@ void W25qxx_ReadSector(uint8_t *pBuffer, uint32_t Sector_Address, uint32_t Offse
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "%s:0x%X(%u), Offset:%u ,Read %u Bytes, begin...\r\n",
                  __func__, Sector_Address, Sector_Address, OffsetInByte, NumByteToRead_up_to_SectorSize);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
 #endif
 
     if (OffsetInByte >= w25qxx.SectorSize) {
 #ifdef W25QXX_DEBUG
     	Report(NULL, true, "---w25qxx ReadSector Faild!\r\n");
-    	W25qxx_Delay(100);
+    	//W25qxx_Delay(100);
 #endif
         return;
     }
@@ -928,7 +931,7 @@ void W25qxx_ReadSector(uint8_t *pBuffer, uint32_t Sector_Address, uint32_t Offse
 
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "%s done\r\n", __func__);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
 #endif
 
 }
@@ -941,13 +944,13 @@ void W25qxx_ReadBlock(uint8_t *pBuffer, uint32_t Block_Address, uint32_t OffsetI
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "%s:0x%X(%u), Offset:%u ,Read %u Bytes, begin...\r\n",
                  __func__, Block_Address, Block_Address, OffsetInByte, NumByteToRead_up_to_BlockSize);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
 #endif
 
     if (OffsetInByte >= w25qxx.BlockSize) {
 #ifdef W25QXX_DEBUG
     	Report(NULL, true, "%s Faild!\r\n", __func__);
-    	W25qxx_Delay(100);
+    	//W25qxx_Delay(100);
 #endif
         return;
     }
@@ -970,7 +973,7 @@ void W25qxx_ReadBlock(uint8_t *pBuffer, uint32_t Block_Address, uint32_t OffsetI
 
 #ifdef W25QXX_DEBUG
     Report(NULL, true, "%s done\r\n", __func__);
-    W25qxx_Delay(100);
+    //W25qxx_Delay(100);
 #endif
 
 }

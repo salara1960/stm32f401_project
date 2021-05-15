@@ -86,7 +86,8 @@ DMA_HandleTypeDef hdma_usart6_tx;
 //const char *version = "1.5 (11.05.2021)";// add ble_connect_enable_pin
 //const char *version = "1.6 (12.05.2021)";// add ble_clients list
 //const char *version = "1.7 (13.05.2021)";
-const char *version = "1.8 (14.05.2021)";// add support ble clients enable list : init, add, print
+//const char *version = "1.8 (14.05.2021)";// add support ble clients enable list : init, add, print
+const char *version = "1.9 (15.05.2021)";// add support ble clients enable list : write/read list to/from spi flash
 
 
 
@@ -100,7 +101,7 @@ UART_HandleTypeDef *portLOG = &huart1;
 
 //1620036392;//1619997553;//1619963555;//1619617520;//1619599870;//1619513155;//1619473366;//1619375396;//1619335999;
 //1620725850;//1620673738;//1620557655;//1620467295;//1620406195;//1620329368;//1620246336;//1620214632;//1620063356;
-volatile time_t epoch = 1621015568;//1620893900;//1620850510;//1620827210;
+volatile time_t epoch = 1621081250;//1621015568;//1620893900;//1620850510;//1620827210;
 uint8_t tZone = 2;
 volatile uint32_t cnt_err = 0;
 volatile uint8_t restart_flag = 0;
@@ -229,6 +230,9 @@ bool kbdEnable = false;
 	str_name_t cli_name[MAX_BLE];
 	uint8_t total_cli = 0;
 
+	uint8_t pageBufTx[PAGE_BUF_SIZE] = {0};
+	uint8_t pageBufRx[PAGE_BUF_SIZE] = {0};
+
 #endif
 
 /* USER CODE END PV */
@@ -347,6 +351,18 @@ evt_t ret = msg_empty;
 
 //*******************************************************************************************
 #ifdef SET_BLE
+//-------------------------------------------------------------------------------------------
+	#ifdef SET_W25FLASH
+	void pageUpdate(uint32_t pnum)
+	{
+		W25qxx_EraseSector(W25qxx_PageToSector(pnum));
+
+		memset(pageBufTx, 0xff, PAGE_BUF_SIZE);
+		memcpy(pageBufTx, (uint8_t *)&cli_name[0].name[0], total_cli * sizeof(str_name_t));
+		W25qxx_WritePage(pageBufTx, pnum, 0, PAGE_BUF_SIZE);
+	}
+	#endif
+
 //-------------------------------------------------------------------------------------------
 void ble_init_names()
 {
@@ -709,6 +725,28 @@ int main(void)
 	blePin();
 	//
 	ble_hdrClear();
+	//
+	#ifdef SET_W25FLASH
+		uint32_t page_num = 0;//uint32_t Page_Address
+		//W25qxx_EraseSector(0);
+		if (W25qxx_IsEmptyPage(page_num, 0, 0)) {//if page #0 empty -> first write
+			memset(pageBufTx, 0xff, PAGE_BUF_SIZE);
+			memcpy(pageBufTx, (uint8_t *)&cli_name[0].name[0], total_cli * sizeof(str_name_t));
+			W25qxx_WritePage(pageBufTx, page_num, 0, PAGE_BUF_SIZE);
+		}
+		W25qxx_ReadPage(pageBufRx, page_num, 0, 0);
+		if (!w25_withDMA) {
+			str_name_t *ones = (str_name_t *)pageBufRx;
+			uint8_t tcli = 255;
+			while (++tcli < (PAGE_BUF_SIZE / sizeof(str_name_t))) {
+				if (ones->name[0] == 0xff) break;
+				ones++;
+			}
+			total_cli = tcli;
+			memcpy(&cli_name[0].name[0], (char *)pageBufRx, total_cli * sizeof(str_name_t));
+			ble_prnEnableList();
+		}
+	#endif
 #endif
 
     bool startOne = true;
@@ -1411,8 +1449,43 @@ int main(void)
     		case msg_bleEnableList:
     			//
     			//	update ble_enable_list : write cli_name[0]..cli_name[total_cli - 1] to flash (sector 0 page 0)
+	#ifdef SET_W25FLASH
+    			pageUpdate(page_num);
+	#endif
     			//
     		break;
+    		case msg_spiRxDone:
+    		{
+	#ifdef SET_W25FLASH
+    			Report(NULL, true, "Read page # %u in DMA mode:\n", page_num);
+    			memcpy(pageBufRx, pageTmp + PAGE_HDR_BYTES, w25qxx.PageSize);
+    			for (uint32_t i = 0; i < w25qxx.PageSize; i++) {
+    				if ((i % 16 == 0) && (i > 2)) Report(NULL, false, "\r\n");
+    				Report(NULL, false, "0x%02X,", pageBufRx[i]);
+    			}
+    			Report(NULL, false, "\r\n");
+    			str_name_t *ones = (str_name_t *)pageBufRx;
+    			uint8_t tcli = 255;
+    			while (++tcli < (w25qxx.PageSize / sizeof(str_name_t))) {
+    				if (ones->name[0] == 0xff) break;
+    				ones++;
+    			}
+    			total_cli = tcli;
+    			memcpy(&cli_name[0].name[0], (char *)pageBufRx, total_cli * sizeof(str_name_t));
+    			ble_prnEnableList();
+	#endif
+    		}
+    		case msg_spiTxDone:
+    		{
+	#ifdef SET_W25FLASH
+    			Report(NULL, true, "Write page # %u in DMA mode:\n", page_num);
+    			for (uint32_t i = 0; i < w25qxx.PageSize; i++) {
+    				if ((i % 16 == 0) && (i > 2)) Report(NULL, false, "\r\n");
+    				Report(NULL, false, "0x%02X,", pageBufTx[i]);
+    			}
+    			Report(NULL, false, "\r\n");
+	#endif
+    		}
 #endif
     		case msg_sec:
     		{
@@ -2377,6 +2450,26 @@ void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 	if (hspi->Instance == SPI1) {//FLASH
 		spi_cnt++;
 		spiRdy = 1;
+#ifdef SET_W25FLASH
+		if (w25_withDMA) {
+			W25_UNSELECT();
+			putMsg(msg_spiTxDone);
+		}
+#endif
+	}
+}
+//-------------------------------------------------------------------------------------------
+void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+	if (hspi->Instance == SPI1) {//FLASH
+		spi_cnt++;
+		spiRdy = 1;
+#ifdef SET_W25FLASH
+		if (w25_withDMA) {
+			W25_UNSELECT();
+			putMsg(msg_spiRxDone);
+		}
+#endif
 	}
 }
 //-------------------------------------------------------------------------------------------
